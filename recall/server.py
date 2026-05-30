@@ -11,7 +11,11 @@ from .embeddings import EmbeddingEngine
 from .migrate import parse_solved_issues
 from .models import Issue
 
-mcp = FastMCP("fusional-recall")
+mcp = FastMCP(
+    "fusional-recall",
+    host=os.getenv("RECALL_HOST", "0.0.0.0"),
+    port=int(os.getenv("RECALL_PORT", "8107")),
+)
 
 _db: Optional[RecallDB] = None
 _embedder: Optional[EmbeddingEngine] = None
@@ -145,9 +149,7 @@ def get(si_id: str) -> str:
 
 
 def main():
-    host = os.getenv("RECALL_HOST", "0.0.0.0")
-    port = int(os.getenv("RECALL_PORT", "8107"))
-    mcp.run(transport="streamable-http", host=host, port=port)
+    mcp.run(transport="streamable-http")
 
 
 if __name__ == "__main__":
