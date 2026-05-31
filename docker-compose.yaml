@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  recall:
+    build: .
+    container_name: fusional-recall
+    restart: unless-stopped
+    ports:
+      - "8107:8107"
+    environment:
+      RECALL_HOST: "0.0.0.0"
+      RECALL_PORT: "8107"
+      RECALL_DB_PATH: "/data/recall.db"
+      EMBEDDING_MODEL: "all-MiniLM-L6-v2"
+      DEFAULT_TIER: "personal"
+      # Mount your SOLVED-ISSUES.md path here:
+      # SOLVED_ISSUES_PATH: "/kb/05-RECALL/SOLVED-ISSUES.md"
+    volumes:
+      - recall_data:/data
+      # Uncomment to mount your knowledge base for auto-migration:
+      # - ../fusional-knowledge-base:/kb:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8107/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  recall_data:

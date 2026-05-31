@@ -1,9 +1,12 @@
-fastmcp>=1.27.1
-mcp>=1.1.0
-sqlite-vec>=0.1.0
+mcp[cli]>=1.1.0
+fastmcp>=0.1.0
 sentence-transformers>=3.0.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
-pytest>=7.4.0
+uvicorn>=0.29.0
+starlette>=0.37.0
+# dev / test
+pytest>=8.0.0
 pytest-asyncio>=0.23.0
-ruff>=0.1.0
+pytest-cov>=5.0.0
+ruff>=0.4.0

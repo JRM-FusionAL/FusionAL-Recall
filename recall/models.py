@@ -1,41 +1,50 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
+"""Pydantic v2 models for FusionAL Recall."""
+
+from __future__ import annotations
+
 from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
 
 
 class Issue(BaseModel):
-    """Solved issue entry from the registry."""
-    si_id: str = Field(..., description="Issue ID (e.g., SI-001)")
-    title: str = Field(..., description="One-line title")
-    symptoms: str = Field(..., description="What the problem looked like")
+    """A solved issue entry in the recall registry."""
+
+    si_id: str = Field(..., description="Unique identifier, e.g. SI-001")
+    title: str = Field(..., description="One-line summary of the issue")
+    symptoms: str = Field(..., description="What the agent observed")
     root_cause: str = Field(..., description="What was actually wrong")
-    fix: str = Field(..., description="Exact steps that worked")
-    source: str = Field(..., description="Session/repo/article context")
-    tags: List[str] = Field(default_factory=list, description="Comma-separated tags")
-    verified_at: Optional[str] = Field(None, description="Verification date (YYYY-MM)")
+    fix: str = Field(..., description="Exact steps that resolved the issue")
+    source: str = Field(default="", description="Session or repo context")
+    tags: List[str] = Field(default_factory=list, description="Searchable labels")
+    verified_at: Optional[str] = Field(None, description="YYYY-MM verification date")
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    tier: str = Field(default="personal", description="Access tier: personal, project, or public")
-    embedding: Optional[bytes] = Field(None, description="float32 embedding bytes from sqlite-vec")
+    tier: str = Field(default="personal", description="personal | project | public")
+    embedding: Optional[bytes] = Field(None, exclude=True, description="float32 vector blob")
 
     model_config = {
         "json_schema_extra": {
-            "example": {
-                "si_id": "SI-001",
-                "title": "Claude Desktop server timeout above 8 servers",
-                "symptoms": "MCP servers fail to load, timeout errors in Claude Desktop logs",
-                "root_cause": "Claude Desktop has an effective ~8 server limit before init timeouts",
-                "fix": "Consolidate via FusionAL gateway (single MCP entry, N tools behind it)",
-                "source": "FusionAL config debugging session",
-                "tags": ["claude-desktop", "mcp", "timeout", "windows"],
-                "verified_at": "2026-03",
-                "tier": "public"
-            }
+            "examples": [
+                {
+                    "si_id": "SI-001",
+                    "title": "Claude Desktop server timeout above 8 servers",
+                    "symptoms": "Claude Desktop hangs on startup when >8 MCP servers configured",
+                    "root_cause": "Desktop client enforces a hard timeout on MCP server init",
+                    "fix": "Consolidate via FusionAL gateway — expose one MCP endpoint, proxy internally",
+                    "source": "2026-01 setup session",
+                    "tags": ["claude-desktop", "mcp", "timeout", "fusional"],
+                    "verified_at": "2026-01",
+                    "tier": "personal",
+                }
+            ]
         }
     }
 
 
 class QueryResult(BaseModel):
-    """Search result from semantic query."""
+    """A search result with similarity score."""
+
     si_id: str
     title: str
     symptoms: str
@@ -43,14 +52,15 @@ class QueryResult(BaseModel):
     fix: str
     source: str
     tags: List[str]
-    similarity: float = Field(..., description="Similarity score 0.0-1.0")
+    similarity: float = Field(..., ge=0.0, le=1.0)
     tier: str
 
 
 class RememberResult(BaseModel):
-    """Response from remember() tool."""
-    si_id: str = Field(..., description="Auto-assigned SI ID")
+    """Confirmation that a new SI entry was stored."""
+
+    si_id: str
     title: str
     created_at: datetime
     tier: str
-    message: str = Field(default="Entry created successfully")
+    message: str
