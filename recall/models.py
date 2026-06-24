@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
@@ -19,7 +19,7 @@ class Issue(BaseModel):
     source: str = Field(default="", description="Session or repo context")
     tags: List[str] = Field(default_factory=list, description="Searchable labels")
     verified_at: Optional[str] = Field(None, description="YYYY-MM verification date")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     tier: str = Field(default="personal", description="personal | project | public")
     embedding: Optional[bytes] = Field(None, exclude=True, description="float32 vector blob")
 

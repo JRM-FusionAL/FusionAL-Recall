@@ -40,13 +40,13 @@ def test_count_after_insert(db):
 
 
 def test_get_next_si_id_empty(db):
-    assert db.get_next_si_id() == "SI-001"
+    assert db.next_si_id() == "SI-001"
 
 
 def test_get_next_si_id_after_inserts(db):
     db.insert_issue(_make_issue("SI-001"))
     db.insert_issue(_make_issue("SI-005"))
-    assert db.get_next_si_id() == "SI-006"
+    assert db.next_si_id() == "SI-006"
 
 
 def test_list_recent(db):

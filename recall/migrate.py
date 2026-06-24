@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,14 +12,15 @@ if TYPE_CHECKING:
     from .db import RecallDB
     from .embeddings import EmbeddingEngine
 
+from .models import Issue
+
 log = logging.getLogger(__name__)
 
 # Matches:  ## SI-001: Some title
 _SI_HEADER = re.compile(r"^## (SI-\d+):\s+(.+)$", re.MULTILINE)
 # Matches labelled fields like **Symptoms:** text
 _FIELD = re.compile(
-    r"\*\*(Symptoms|Root cause|Fix|Verified|Source|Tags):\*\*\s*(.+?)(?=\n\*\*|\Z)",
-    re.DOTALL,
+    r"\*\*(Symptoms|Root cause|Fix|Verified|Source|Tags):\*\*\s*(.+)",
 )
 
 
@@ -51,16 +52,16 @@ def _parse_issues(text: str) -> list[dict]:
             val = m.group(2).strip()
             fields[key] = val
 
-        # Parse Verified date — "2026-01 | Source: ..." format
+        # Parse Verified date — "2026-01 | **Source:** <value>" format
         verified_raw = fields.get("verified", "")
         verified_at: str | None = None
         source = fields.get("source", "")
         if "|" in verified_raw:
             parts = verified_raw.split("|", 1)
             verified_at = parts[0].strip()
-            # Source may be embedded after "Source:" in the verified field
+            # Source may be embedded after "**Source:**" in the verified field
             if "Source:" in parts[1]:
-                source = parts[1].split("Source:", 1)[1].strip()
+                source = parts[1].split("Source:", 1)[1].strip().lstrip("*").strip()
         elif verified_raw:
             verified_at = verified_raw
 
@@ -83,6 +84,32 @@ def _parse_issues(text: str) -> list[dict]:
         i += 3
 
     return issues
+
+
+def parse_solved_issues(path: str | Path) -> list[Issue]:
+    """Public wrapper: parse a SOLVED-ISSUES.md file and return Issue objects.
+
+    This is the import surface used by tests.
+    """
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    raw = _parse_issues(text)
+
+    return [
+        Issue(
+            si_id=d["si_id"],
+            title=d["title"],
+            symptoms=d["symptoms"],
+            root_cause=d["root_cause"],
+            fix=d["fix"],
+            source=d["source"] or "",
+            tags=d["tags"],
+            verified_at=d["verified_at"],
+            created_at=datetime.now(timezone.utc),
+            tier="personal",
+            embedding=None,
+        )
+        for d in raw
+    ]
 
 
 def migrate_issues(
@@ -120,8 +147,6 @@ def migrate_issues(
     titles = [d["title"] for d in issues_data]
     blobs = engine.embed_batch(titles)
 
-    from .models import Issue
-
     inserted = 0
     for data, blob in zip(issues_data, blobs):
         issue = Issue(
@@ -133,7 +158,7 @@ def migrate_issues(
             source=data["source"],
             tags=data["tags"],
             verified_at=data["verified_at"],
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             tier="personal",
             embedding=blob,
         )

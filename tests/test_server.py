@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Generator
 from unittest.mock import MagicMock, patch
@@ -45,7 +45,7 @@ def _make_issue(
         source="test-session",
         tags=["test", "unit"],
         verified_at="2026-05",
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
         tier=tier,
         embedding=blob or _fake_blob(),
     )
@@ -110,7 +110,7 @@ class TestModels:
             )
 
     def test_remember_result_round_trips(self):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         r = RememberResult(si_id="SI-030", title="T", created_at=now, tier="personal", message="ok")
         assert r.model_dump()["si_id"] == "SI-030"
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -125,7 +125,7 @@ def remember(
         fix=fix,
         source=source,
         tags=tags or [],
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
         tier=tier,
         embedding=blob,
     )
