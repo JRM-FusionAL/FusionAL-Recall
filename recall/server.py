@@ -210,6 +210,16 @@ def _on_startup() -> None:
 # Entry point
 # ------------------------------------------------------------------
 
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+
+@app.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:
+    """Simple health check endpoint for monitoring."""
+    return JSONResponse({"status": "ok", "service": "fusional-recall", "port": PORT})
+
+
 def main() -> None:  # pragma: no cover
     _on_startup()
     app.run(transport="streamable-http")
