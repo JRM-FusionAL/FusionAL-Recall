@@ -22,6 +22,8 @@ class Issue(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     tier: str = Field(default="personal", description="personal | project | public")
     embedding: Optional[bytes] = Field(None, exclude=True, description="float32 vector blob")
+    notion_page_id: Optional[str] = Field(None, description="Linked Notion page ID")
+    notion_edited_at: Optional[str] = Field(None, description="Notion last_edited_time at last sync")
 
     model_config = {
         "json_schema_extra": {
