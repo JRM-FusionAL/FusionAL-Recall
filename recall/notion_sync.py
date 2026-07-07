@@ -93,3 +93,119 @@ def map_page_to_issue(page: dict) -> Issue | None:
         notion_page_id=page["id"],
         notion_edited_at=page.get("last_edited_time"),
     )
+
+
+class NotionSyncError(Exception):
+    """Raised when the Notion API returns an error response."""
+
+
+class NotionClient:
+    """Minimal Notion REST client — query + create only, no SDK dependency."""
+
+    BASE = "https://api.notion.com/v1"
+
+    def __init__(self, token: str, data_source_id: str, timeout: float = 10.0) -> None:
+        self._token = token
+        self._ds_id = data_source_id
+        self._timeout = timeout
+
+    def _post(self, path: str, payload: dict, version: str) -> dict:
+        import httpx
+
+        resp = httpx.post(
+            f"{self.BASE}{path}",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {self._token}",
+                "Notion-Version": version,
+                "Content-Type": "application/json",
+            },
+            timeout=self._timeout,
+        )
+        if resp.status_code >= 400:
+            raise NotionSyncError(f"POST {path} -> {resp.status_code}: {resp.text[:200]}")
+        return resp.json()
+
+    def _query_once(self, payload: dict) -> dict:
+        # Data-source endpoint (2025 API); fall back to classic database query.
+        try:
+            return self._post(f"/data_sources/{self._ds_id}/query", payload, "2025-09-03")
+        except NotionSyncError:
+            return self._post(f"/databases/{self._ds_id}/query", payload, "2022-06-28")
+
+    def query_all_pages(self) -> list[dict]:
+        pages: list[dict] = []
+        cursor: str | None = None
+        while True:
+            payload: dict = {"page_size": 100}
+            if cursor:
+                payload["start_cursor"] = cursor
+            data = self._query_once(payload)
+            pages.extend(data.get("results", []))
+            if not data.get("has_more"):
+                return pages
+            cursor = data.get("next_cursor")
+
+    def create_page(self, properties: dict) -> str:
+        payload: dict = {
+            "parent": {"type": "data_source_id", "data_source_id": self._ds_id},
+            "properties": properties,
+        }
+        try:
+            data = self._post("/pages", payload, "2025-09-03")
+        except NotionSyncError:
+            payload["parent"] = {"database_id": self._ds_id}
+            data = self._post("/pages", payload, "2022-06-28")
+        return data["id"]
+
+
+def _chunk_rich_text(content: str, limit: int = 2000) -> list[dict]:
+    chunks = [content[i : i + limit] for i in range(0, len(content), limit)] or [""]
+    return [{"text": {"content": c}} for c in chunks]
+
+
+def build_notion_properties(
+    title: str,
+    solution: str,
+    project: str,
+    tags: list[str],
+    severity: str = "Medium",
+) -> dict:
+    """Properties payload for creating a Solved Issues page."""
+    return {
+        "Issue": {"title": _chunk_rich_text(title)},
+        "Solution": {"rich_text": _chunk_rich_text(solution)},
+        "Project": {"select": {"name": project or "General"}},
+        "Tags": {"multi_select": [{"name": t} for t in tags]},
+        "Severity": {"select": {"name": severity}},
+    }
+
+
+def sync_from_notion(db: "RecallDB", engine: "EmbeddingEngine", client: NotionClient) -> int:
+    """Incrementally upsert Notion pages into the local index.
+
+    Returns the number of rows inserted/updated. Never raises on
+    Notion/network failure — the existing index keeps serving.
+    """
+    try:
+        pages = client.query_all_pages()
+    except Exception as exc:
+        log.warning("notion sync: query failed, keeping existing index: %s", exc)
+        return 0
+
+    state = db.notion_sync_state()
+    changed = 0
+    for page in pages:
+        page_id = page.get("id", "")
+        edited = page.get("last_edited_time") or ""
+        if page_id and edited and state.get(page_id) == edited:
+            continue
+        issue = map_page_to_issue(page)
+        if issue is None:
+            log.warning("notion sync: skipping page %s (no title)", page_id)
+            continue
+        issue.embedding = engine.embed(f"{issue.title} {issue.symptoms} {issue.root_cause}")
+        db.insert_issue(issue)
+        changed += 1
+    log.info("notion sync: %d page(s) upserted, %d total in index", changed, db.count())
+    return changed

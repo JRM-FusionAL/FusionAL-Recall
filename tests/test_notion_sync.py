@@ -95,3 +95,143 @@ class TestMapPageToIssue:
         assert issue is not None
         assert issue.source == ""
         assert not any(t.startswith("severity:") for t in issue.tags)
+
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from recall.notion_sync import (
+    NotionClient,
+    NotionSyncError,
+    build_notion_properties,
+    sync_from_notion,
+)
+
+
+def _mock_response(status_code: int = 200, payload: dict | None = None):
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.json.return_value = payload or {}
+    resp.text = str(payload)
+    return resp
+
+
+class TestNotionClient:
+    def test_query_paginates(self):
+        client = NotionClient("tok", "ds-id")
+        pages = [
+            _mock_response(200, {"results": [{"id": "p1"}], "has_more": True, "next_cursor": "c1"}),
+            _mock_response(200, {"results": [{"id": "p2"}], "has_more": False}),
+        ]
+        with patch("httpx.post", side_effect=pages) as post:
+            got = client.query_all_pages()
+        assert [p["id"] for p in got] == ["p1", "p2"]
+        assert post.call_args_list[1].kwargs["json"]["start_cursor"] == "c1"
+
+    def test_data_source_404_falls_back_to_database_endpoint(self):
+        client = NotionClient("tok", "ds-id")
+        responses = [
+            _mock_response(404, {}),
+            _mock_response(200, {"results": [], "has_more": False}),
+        ]
+        with patch("httpx.post", side_effect=responses) as post:
+            client.query_all_pages()
+        urls = [c.args[0] for c in post.call_args_list]
+        assert "/data_sources/ds-id/query" in urls[0]
+        assert "/databases/ds-id/query" in urls[1]
+
+    def test_error_raises_notion_sync_error(self):
+        client = NotionClient("tok", "ds-id")
+        with patch("httpx.post", return_value=_mock_response(401, {})):
+            with pytest.raises(NotionSyncError):
+                client.query_all_pages()
+
+    def test_create_page_returns_id(self):
+        client = NotionClient("tok", "ds-id")
+        with patch("httpx.post", return_value=_mock_response(200, {"id": "new-page"})):
+            assert client.create_page({"Issue": {}}) == "new-page"
+
+
+class TestBuildNotionProperties:
+    def test_shape(self):
+        props = build_notion_properties("t", "s", "FusionAL", ["python", "mcp"])
+        assert props["Issue"]["title"][0]["text"]["content"] == "t"
+        assert props["Tags"]["multi_select"] == [{"name": "python"}, {"name": "mcp"}]
+        assert props["Severity"]["select"]["name"] == "Medium"
+        assert props["Project"]["select"]["name"] == "FusionAL"
+
+    def test_empty_project_defaults_general(self):
+        assert build_notion_properties("t", "s", "", [])["Project"]["select"]["name"] == "General"
+
+    def test_long_solution_chunked_under_2000(self):
+        props = build_notion_properties("t", "x" * 4500, "General", [])
+        chunks = props["Solution"]["rich_text"]
+        assert len(chunks) == 3
+        assert all(len(c["text"]["content"]) <= 2000 for c in chunks)
+
+
+class TestSyncFromNotion:
+    def _engine(self):
+        engine = MagicMock()
+        engine.embed.return_value = b"\x00" * 16
+        return engine
+
+    def test_inserts_new_pages(self, tmp_path):
+        from recall.db import RecallDB
+
+        db = RecallDB(tmp_path / "t.db")
+        client = MagicMock()
+        client.query_all_pages.return_value = [_page(page_id="aaaa-1"), _page(page_id="bbbb-2")]
+        assert sync_from_notion(db, self._engine(), client) == 2
+        assert db.count() == 2
+        db.close()
+
+    def test_unchanged_pages_skipped(self, tmp_path):
+        from recall.db import RecallDB
+
+        db = RecallDB(tmp_path / "t.db")
+        client = MagicMock()
+        client.query_all_pages.return_value = [_page(page_id="aaaa-1")]
+        engine = self._engine()
+        assert sync_from_notion(db, engine, client) == 1
+        assert sync_from_notion(db, engine, client) == 0
+        assert engine.embed.call_count == 1
+        assert db.count() == 1
+        db.close()
+
+    def test_edited_page_reembedded(self, tmp_path):
+        from recall.db import RecallDB
+
+        db = RecallDB(tmp_path / "t.db")
+        client = MagicMock()
+        client.query_all_pages.return_value = [_page(page_id="aaaa-1")]
+        engine = self._engine()
+        sync_from_notion(db, engine, client)
+        page2 = _page(page_id="aaaa-1", title="edited title")
+        page2["last_edited_time"] = "2026-07-08T00:00:00.000Z"
+        client.query_all_pages.return_value = [page2]
+        assert sync_from_notion(db, engine, client) == 1
+        assert db.count() == 1
+        assert engine.embed.call_count == 2
+        db.close()
+
+    def test_notion_down_returns_zero(self, tmp_path):
+        from recall.db import RecallDB
+
+        db = RecallDB(tmp_path / "t.db")
+        client = MagicMock()
+        client.query_all_pages.side_effect = NotionSyncError("boom")
+        assert sync_from_notion(db, self._engine(), client) == 0
+        db.close()
+
+    def test_titleless_page_skipped(self, tmp_path):
+        from recall.db import RecallDB
+
+        db = RecallDB(tmp_path / "t.db")
+        bad = _page(page_id="cccc-3")
+        bad["properties"]["Issue"]["title"] = []
+        client = MagicMock()
+        client.query_all_pages.return_value = [bad, _page(page_id="dddd-4")]
+        assert sync_from_notion(db, self._engine(), client) == 1
+        db.close()
