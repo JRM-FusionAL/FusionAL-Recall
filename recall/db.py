@@ -45,6 +45,16 @@ class RecallDB:
             CREATE INDEX IF NOT EXISTS idx_created ON issues(created_at DESC);
             """
         )
+        # Additive migration for Notion sync — SQLite can't ADD COLUMN ... UNIQUE,
+        # so uniqueness comes from a separate index (multiple NULLs allowed).
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(issues)")}
+        if "notion_page_id" not in cols:
+            self._conn.execute("ALTER TABLE issues ADD COLUMN notion_page_id TEXT")
+        if "notion_edited_at" not in cols:
+            self._conn.execute("ALTER TABLE issues ADD COLUMN notion_edited_at TEXT")
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_notion_page ON issues(notion_page_id)"
+        )
         self._conn.commit()
 
     # ------------------------------------------------------------------
@@ -57,8 +67,9 @@ class RecallDB:
             """
             INSERT OR REPLACE INTO issues
                 (si_id, title, symptoms, root_cause, fix, source,
-                 tags, verified_at, created_at, tier, embedding)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                 tags, verified_at, created_at, tier, embedding,
+                 notion_page_id, notion_edited_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 issue.si_id,
@@ -72,6 +83,8 @@ class RecallDB:
                 issue.created_at.isoformat(),
                 issue.tier,
                 issue.embedding,
+                issue.notion_page_id,
+                issue.notion_edited_at,
             ),
         )
         self._conn.commit()
@@ -157,6 +170,14 @@ class RecallDB:
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM issues").fetchone()[0]
 
+    def notion_sync_state(self) -> dict[str, str]:
+        """Map notion_page_id -> notion_edited_at for all Notion-linked rows."""
+        rows = self._conn.execute(
+            "SELECT notion_page_id, notion_edited_at FROM issues"
+            " WHERE notion_page_id IS NOT NULL"
+        ).fetchall()
+        return {r["notion_page_id"]: r["notion_edited_at"] or "" for r in rows}
+
     def close(self) -> None:
         self._conn.close()
 
@@ -200,4 +221,6 @@ class RecallDB:
             created_at=created,
             tier=row["tier"],
             embedding=bytes(row["embedding"]) if row["embedding"] else None,
+            notion_page_id=row["notion_page_id"],
+            notion_edited_at=row["notion_edited_at"],
         )
