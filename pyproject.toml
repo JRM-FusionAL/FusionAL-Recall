@@ -13,7 +13,8 @@ requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=1.1.0",
     "fastmcp>=0.1.0",
-    "sentence-transformers>=3.0.0",
+    "fastembed>=0.3.0",
+    "httpx>=0.27.0",
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
     "uvicorn>=0.29.0",
@@ -30,6 +31,9 @@ dev = [
 
 [project.scripts]
 fusional-recall = "recall.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["recall"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
