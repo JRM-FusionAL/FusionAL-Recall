@@ -56,7 +56,9 @@ def derive_si_id(page_id: str, title: str) -> str:
     m = _SI_ID.search(title)
     if m:
         return m.group(0)
-    return "N-" + page_id.replace("-", "")[:8]
+    # Full hex, not a prefix: Notion page IDs are time-ordered, so short
+    # prefixes collide across pages created near each other.
+    return "N-" + page_id.replace("-", "")
 
 
 def _plain_text(rich: list[dict]) -> str:

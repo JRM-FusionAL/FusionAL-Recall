@@ -63,11 +63,18 @@ class TestDeriveSiId:
         """A page whose *body* references SI-007 must NOT overwrite local SI-007."""
         page = _page(page_id="abcd1234-0000", title="broke", solution="Fix: see SI-007 for context")
         issue = map_page_to_issue(page)
-        assert issue.si_id == "N-abcd1234"
+        assert issue.si_id.startswith("N-")
+        assert "SI-007" not in issue.si_id
 
-    def test_page_id_fallback(self):
+    def test_page_id_fallback_uses_full_id(self):
         got = derive_si_id("396ac8f9-e6ff-8111-9434-deef3679b35b", "broke")
-        assert got == "N-396ac8f9"
+        assert got == "N-396ac8f9e6ff81119434deef3679b35b"
+
+    def test_shared_prefix_pages_get_distinct_ids(self):
+        """Notion page IDs are time-ordered — first-8-hex prefixes collide."""
+        a = derive_si_id("396ac8f9-e6ff-8111-9434-deef3679b35b", "x")
+        b = derive_si_id("396ac8f9-aaaa-8111-9434-000000000000", "y")
+        assert a != b
 
 
 class TestMapPageToIssue:
@@ -83,7 +90,7 @@ class TestMapPageToIssue:
         assert "severity:High" in issue.tags
         assert issue.notion_page_id == "396ac8f9-e6ff-8111-9434-deef3679b35b"
         assert issue.notion_edited_at == "2026-07-07T12:30:00.000Z"
-        assert issue.si_id == "N-396ac8f9"
+        assert issue.si_id == "N-396ac8f9e6ff81119434deef3679b35b"
         assert issue.created_at.year == 2026
 
     def test_missing_title_returns_none(self):
