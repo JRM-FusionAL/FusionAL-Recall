@@ -25,6 +25,11 @@ DEFAULT_TIER = os.getenv("DEFAULT_TIER", "personal")
 SOLVED_ISSUES_PATH = os.getenv("SOLVED_ISSUES_PATH", None)
 HOST = os.getenv("RECALL_HOST", "0.0.0.0")
 PORT = int(os.getenv("RECALL_PORT", "8107"))
+NOTION_TOKEN = os.getenv("NOTION_TOKEN")
+NOTION_DATA_SOURCE_ID = os.getenv(
+    "NOTION_DATA_SOURCE_ID", "836a9fe2-738d-4fdf-90a5-4364e1b36f1f"
+)
+NOTION_SYNC_INTERVAL = int(os.getenv("NOTION_SYNC_INTERVAL", "3600"))
 
 # ------------------------------------------------------------------
 # Singletons (initialised lazily on first request so tests can inject mocks)
@@ -48,6 +53,18 @@ def get_engine():
         from .embeddings import EmbeddingEngine
         _engine = EmbeddingEngine(EMBEDDING_MODEL)
     return _engine
+
+
+_notion: "NotionClient | None" = None
+
+
+def get_notion():
+    """NotionClient singleton, or None when NOTION_TOKEN is unset."""
+    global _notion
+    if _notion is None and NOTION_TOKEN:
+        from .notion_sync import NotionClient
+        _notion = NotionClient(NOTION_TOKEN, NOTION_DATA_SOURCE_ID)
+    return _notion
 
 
 # ------------------------------------------------------------------
@@ -110,12 +127,26 @@ def remember(
         RememberResult with the new SI-ID and confirmation message.
     """
     from .models import Issue, RememberResult
+    from .notion_sync import build_notion_properties
 
     db = get_db()
     engine = get_engine()
 
     si_id = db.next_si_id()
     blob = engine.embed(f"{title} {symptoms} {root_cause}")
+
+    # Notion is the canonical registry — write there first, but never
+    # let a Notion outage block local logging.
+    notion_page_id: str | None = None
+    client = get_notion()
+    if client is not None:
+        solution = f"Symptoms: {symptoms}\nRoot cause: {root_cause}\nFix: {fix}"
+        try:
+            notion_page_id = client.create_page(
+                build_notion_properties(title, solution, source, tags or [])
+            )
+        except Exception as exc:
+            log.warning("remember: Notion write failed, saving locally only: %s", exc)
 
     issue = Issue(
         si_id=si_id,
@@ -128,6 +159,7 @@ def remember(
         created_at=datetime.now(timezone.utc),
         tier=tier,
         embedding=blob,
+        notion_page_id=notion_page_id,
     )
     db.insert_issue(issue)
 
@@ -137,6 +169,7 @@ def remember(
         created_at=issue.created_at,
         tier=tier,
         message=f"Logged {si_id}: {title}",
+        notion_synced=notion_page_id is not None,
     )
     return result.model_dump()
 

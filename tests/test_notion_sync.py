@@ -238,3 +238,44 @@ class TestSyncFromNotion:
         client.query_all_pages.return_value = [bad, _page(page_id="dddd-4")]
         assert sync_from_notion(db, self._engine(), client) == 1
         db.close()
+
+
+class TestRememberDualWrite:
+    def _setup(self, tmp_path, monkeypatch):
+        from recall import server
+
+        monkeypatch.setattr(server, "_db", None)
+        monkeypatch.setattr(server, "_engine", None)
+        monkeypatch.setattr(server, "_notion", None)
+        monkeypatch.setattr(server, "DB_PATH", str(tmp_path / "t.db"))
+        engine = MagicMock()
+        engine.embed.return_value = b"\x00" * 16
+        monkeypatch.setattr(server, "get_engine", lambda: engine)
+        return server
+
+    def test_notion_success_stores_page_id(self, tmp_path, monkeypatch):
+        server = self._setup(tmp_path, monkeypatch)
+        client = MagicMock()
+        client.create_page.return_value = "page-123"
+        monkeypatch.setattr(server, "get_notion", lambda: client)
+        result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
+        assert result["notion_synced"] is True
+        stored = server.get_db().get_issue_by_id(result["si_id"])
+        assert stored.notion_page_id == "page-123"
+        sent = client.create_page.call_args.args[0]
+        assert "Symptoms: s" in sent["Solution"]["rich_text"][0]["text"]["content"]
+
+    def test_notion_failure_still_writes_locally(self, tmp_path, monkeypatch):
+        server = self._setup(tmp_path, monkeypatch)
+        client = MagicMock()
+        client.create_page.side_effect = NotionSyncError("down")
+        monkeypatch.setattr(server, "get_notion", lambda: client)
+        result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
+        assert result["notion_synced"] is False
+        assert server.get_db().get_issue_by_id(result["si_id"]) is not None
+
+    def test_no_token_behaves_as_before(self, tmp_path, monkeypatch):
+        server = self._setup(tmp_path, monkeypatch)
+        monkeypatch.setattr(server, "get_notion", lambda: None)
+        result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
+        assert result["notion_synced"] is False

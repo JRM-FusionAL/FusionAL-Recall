@@ -66,3 +66,4 @@ class RememberResult(BaseModel):
     created_at: datetime
     tier: str
     message: str
+    notion_synced: bool = False
