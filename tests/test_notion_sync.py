@@ -57,13 +57,16 @@ class TestParseSolution:
 
 class TestDeriveSiId:
     def test_legacy_id_in_title_reused(self):
-        assert derive_si_id("abc-def", "SI-042 broke again", "") == "SI-042"
+        assert derive_si_id("abc-def", "SI-042 broke again") == "SI-042"
 
-    def test_legacy_id_in_solution_reused(self):
-        assert derive_si_id("abc-def", "broke", "see SI-007 for context") == "SI-007"
+    def test_body_mention_does_not_hijack_identity(self):
+        """A page whose *body* references SI-007 must NOT overwrite local SI-007."""
+        page = _page(page_id="abcd1234-0000", title="broke", solution="Fix: see SI-007 for context")
+        issue = map_page_to_issue(page)
+        assert issue.si_id == "N-abcd1234"
 
     def test_page_id_fallback(self):
-        got = derive_si_id("396ac8f9-e6ff-8111-9434-deef3679b35b", "broke", "no legacy id")
+        got = derive_si_id("396ac8f9-e6ff-8111-9434-deef3679b35b", "broke")
         assert got == "N-396ac8f9"
 
 

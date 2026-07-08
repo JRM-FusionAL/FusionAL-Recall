@@ -46,9 +46,14 @@ def parse_solution(text: str) -> dict[str, str]:
     return parts
 
 
-def derive_si_id(page_id: str, title: str, solution: str) -> str:
-    """Reuse a legacy SI-ID if the entry references one; else derive from page ID."""
-    m = _SI_ID.search(title) or _SI_ID.search(solution)
+def derive_si_id(page_id: str, title: str) -> str:
+    """Reuse a legacy SI-ID only when the *title* carries one.
+
+    Body text must not be trusted for identity: an entry that merely
+    mentions "see SI-007" would otherwise overwrite the local SI-007 row
+    (INSERT OR REPLACE keys on si_id).
+    """
+    m = _SI_ID.search(title)
     if m:
         return m.group(0)
     return "N-" + page_id.replace("-", "")[:8]
@@ -80,7 +85,7 @@ def map_page_to_issue(page: dict) -> Issue | None:
     except ValueError:
         created_at = datetime.now(timezone.utc)
     return Issue(
-        si_id=derive_si_id(page["id"], title, solution),
+        si_id=derive_si_id(page["id"], title),
         title=title.strip(),
         symptoms=parsed["symptoms"],
         root_cause=parsed["root_cause"],
