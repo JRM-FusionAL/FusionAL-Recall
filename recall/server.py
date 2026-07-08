@@ -228,15 +228,42 @@ def get(si_id: str) -> dict:
 # ------------------------------------------------------------------
 
 def _on_startup() -> None:
-    """Migrate SOLVED-ISSUES.md on first run (no-op if DB already populated)."""
+    """Seed from SOLVED-ISSUES.md if empty, then sync from Notion (canonical)."""
     from .migrate import migrate_issues
     db = get_db()
     engine = get_engine()
     inserted = migrate_issues(db, engine, SOLVED_ISSUES_PATH)
     if inserted:
         log.info("startup: migrated %d issues from %s", inserted, SOLVED_ISSUES_PATH)
+
+    client = get_notion()
+    if client is not None:
+        from .notion_sync import sync_from_notion
+        synced = sync_from_notion(db, engine, client)
+        log.info("startup: notion sync upserted %d issue(s)", synced)
     else:
-        log.info("startup: DB ready with %d issues", db.count())
+        log.info("startup: NOTION_TOKEN not set, notion sync disabled")
+    log.info("startup: DB ready with %d issues", db.count())
+
+
+def _start_sync_thread() -> None:
+    """Hourly background re-sync from Notion (daemon thread; failures logged)."""
+    client = get_notion()
+    if client is None or NOTION_SYNC_INTERVAL <= 0:
+        return
+    import threading
+    import time
+
+    def _loop() -> None:
+        from .notion_sync import sync_from_notion
+        while True:
+            time.sleep(NOTION_SYNC_INTERVAL)
+            try:
+                sync_from_notion(get_db(), get_engine(), client)
+            except Exception as exc:  # never kill the thread
+                log.warning("background notion sync failed: %s", exc)
+
+    threading.Thread(target=_loop, daemon=True, name="notion-sync").start()
 
 
 # ------------------------------------------------------------------
@@ -255,6 +282,7 @@ async def health_check(request: Request) -> JSONResponse:
 
 def main() -> None:  # pragma: no cover
     _on_startup()
+    _start_sync_thread()
     app.run(transport="streamable-http")
 
 

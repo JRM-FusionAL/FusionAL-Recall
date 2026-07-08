@@ -279,3 +279,33 @@ class TestRememberDualWrite:
         monkeypatch.setattr(server, "get_notion", lambda: None)
         result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
         assert result["notion_synced"] is False
+
+
+class TestStartupSync:
+    def test_startup_runs_notion_sync_when_configured(self, tmp_path, monkeypatch):
+        from recall import server
+
+        monkeypatch.setattr(server, "_db", None)
+        monkeypatch.setattr(server, "DB_PATH", str(tmp_path / "t.db"))
+        monkeypatch.setattr(server, "SOLVED_ISSUES_PATH", None)
+        engine = MagicMock()
+        engine.embed.return_value = b"\x00" * 16
+        monkeypatch.setattr(server, "get_engine", lambda: engine)
+        client = MagicMock()
+        client.query_all_pages.return_value = [_page(page_id="eeee-5")]
+        monkeypatch.setattr(server, "get_notion", lambda: client)
+        server._on_startup()
+        assert server.get_db().count() == 1
+
+    def test_startup_survives_notion_down(self, tmp_path, monkeypatch):
+        from recall import server
+
+        monkeypatch.setattr(server, "_db", None)
+        monkeypatch.setattr(server, "DB_PATH", str(tmp_path / "t.db"))
+        monkeypatch.setattr(server, "SOLVED_ISSUES_PATH", None)
+        monkeypatch.setattr(server, "get_engine", lambda: MagicMock())
+        client = MagicMock()
+        client.query_all_pages.side_effect = NotionSyncError("down")
+        monkeypatch.setattr(server, "get_notion", lambda: client)
+        server._on_startup()  # must not raise
+        assert server.get_db().count() == 0
