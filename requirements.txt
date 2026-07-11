@@ -102,7 +102,7 @@ python-dotenv==1.2.2
 python-multipart==0.0.32
 pyyaml==6.0.3
 referencing==0.37.0
-regex==2026.6.28
+regex==2026.7.10
 requests==2.34.2
 rich==15.0.0
 rich-rst==2.1.0
@@ -131,5 +131,5 @@ uncalled-for==0.3.2
 urllib3==2.7.0
 uvicorn==0.51.0
 watchfiles==1.2.0
-websockets==16.0
+websockets==16.1
 wheel==0.47.0
