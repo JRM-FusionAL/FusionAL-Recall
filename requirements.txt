@@ -27,7 +27,7 @@ fastmcp-slim==3.4.4
 filelock==3.29.7
 flatbuffers==25.12.19
 fsspec==2026.6.0
--e file:///home/jrm_fusional/Projects/FusionAL-Recall
+-e .
 griffelib==2.1.0
 h11==0.16.0
 hf-xet==1.5.1
