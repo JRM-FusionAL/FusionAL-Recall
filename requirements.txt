@@ -57,7 +57,7 @@ mdurl==0.1.2
 mmh3==5.2.1
 more-itertools==11.1.0
 mpmath==1.4.1
-narwhals==2.23.0
+narwhals==2.24.0
 networkx==3.6.1
 numpy==2.5.1
 nvidia-cublas==13.6.0.2
