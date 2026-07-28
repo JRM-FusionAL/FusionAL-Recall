@@ -6,7 +6,7 @@ attrs==26.1.0
 authlib==1.7.2
 beartype==0.22.9
 cachetools==7.1.6
-caio==0.10.2
+caio==0.9.25
 certifi==2026.7.22
 cffi==2.1.0
 charset-normalizer==3.4.9
@@ -22,8 +22,8 @@ docstring-parser==0.18.0
 email-validator==2.3.0
 exceptiongroup==1.3.1
 fastembed==0.8.0
-fastmcp==3.4.4
-fastmcp-slim==3.4.4
+fastmcp==3.4.5
+fastmcp-slim==3.4.5
 filelock==3.32.0
 flatbuffers==25.12.19
 fsspec==2026.6.0
@@ -34,7 +34,7 @@ hf-xet==1.5.2
 httpcore==1.0.9
 httpx==0.28.1
 httpx-sse==0.4.3
-huggingface-hub==1.24.0
+huggingface-hub==1.25.1
 idna==3.18
 iniconfig==2.3.0
 jaraco-classes==3.4.0
@@ -90,7 +90,7 @@ py-key-value-aio==0.4.5
 py-rust-stemmers==0.1.8
 pycparser==3.0
 pydantic==2.13.4
-pydantic-core==2.47.0
+pydantic-core==2.46.4
 pydantic-settings==2.14.2
 pygments==2.20.0
 pyjwt==2.13.0
@@ -121,7 +121,7 @@ sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.23.1
 torch==2.13.0
-tqdm==4.69.1
+tqdm==4.70.0
 transformers==5.14.1
 triton==3.7.1
 typer==0.27.0
