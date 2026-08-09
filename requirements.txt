@@ -93,7 +93,7 @@ py-key-value-aio==0.4.5
 py-rust-stemmers==0.1.8
 pycparser==3.0
 pydantic==2.13.4
-pydantic-core==2.46.4
+pydantic-core==2.48.0
 pydantic-settings==2.15.0
 pygments==2.20.0
 pyjwt==2.13.0
@@ -115,11 +115,11 @@ scikit-learn==1.9.0
 scipy==1.18.0
 secretstorage==3.5.0
 sentence-transformers==5.7.0
-setuptools==83.0.0
+setuptools==84.0.0
 shellingham==1.5.4
 sqlite-vec==0.1.9
 sse-starlette==3.4.8
-starlette==1.4.1
+starlette==1.6.0
 sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.23.1
