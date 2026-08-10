@@ -32,10 +32,10 @@ griffelib==2.1.0
 h11==0.16.0
 hf-xet==1.6.0
 httpcore==1.0.9
-httpcore2==2.9.1
+httpcore2==2.10.0
 httpx==0.28.1
 httpx-sse==0.4.3
-httpx2==2.9.1
+httpx2==2.10.0
 huggingface-hub==1.27.0
 idna==3.18
 iniconfig==2.3.0
@@ -62,7 +62,7 @@ more-itertools==11.1.0
 mpmath==1.4.1
 narwhals==2.24.0
 networkx==3.6.1
-numpy==2.5.1
+numpy==2.5.2
 nvidia-cublas==13.6.1.10
 nvidia-cuda-cccl==13.3.3.4.1
 nvidia-cuda-cupti==13.3.75
