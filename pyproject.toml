@@ -11,7 +11,7 @@ license = { text = "MIT" }
 authors = [{ name = "Jonathan Melton" }]
 requires-python = ">=3.11"
 dependencies = [
-    "mcp[cli]>=1.1.0",
+    "mcp[cli]>=1.1.0,<2.0",
     "fastmcp>=3.4.4,<4",
     "fastembed>=0.3.0",
     "httpx>=0.27.0",
