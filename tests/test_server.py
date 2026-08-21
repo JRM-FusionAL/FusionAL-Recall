@@ -311,11 +311,20 @@ class TestServerTools:
         import recall.server as srv
         srv._db = db
         srv._engine = engine
+        # remember() dual-writes to Notion through get_notion(), which builds a
+        # real client from the real NOTION_TOKEN that load_dotenv() picked up at
+        # import. Left unpatched, every run of this suite created junk pages
+        # ("Test issue", "First", "Second") in the live Solved Issues database.
+        self._saved_token = srv.NOTION_TOKEN
+        srv.NOTION_TOKEN = ""
+        srv._notion = None
 
     def _reset_singletons(self):
         import recall.server as srv
         srv._db = None
         srv._engine = None
+        srv.NOTION_TOKEN = getattr(self, "_saved_token", srv.NOTION_TOKEN)
+        srv._notion = None
 
     def test_recall_returns_list(self, populated_db: RecallDB, mock_engine: MagicMock):
         self._patch_singletons(populated_db, mock_engine)
@@ -348,6 +357,7 @@ class TestServerTools:
                 tags=["test"],
             )
             assert result["si_id"] == "SI-001"
+            assert result["notion_synced"] is False  # must not touch live Notion
             assert "Logged SI-001" in result["message"]
             assert tmp_db.count() == 1
         finally:

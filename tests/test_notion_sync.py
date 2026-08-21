@@ -174,6 +174,24 @@ class TestBuildNotionProperties:
     def test_empty_project_defaults_general(self):
         assert build_notion_properties("t", "s", "", [])["Project"]["select"]["name"] == "General"
 
+    def test_commas_scrubbed_from_select_options(self):
+        # Notion 400s on a comma in a select/multi-select option name, and
+        # `remember` passes its free-text `source` straight into Project. A
+        # single comma used to fail the whole page create -- and the legacy
+        # fallback then masked it as a 404, so two entries silently never
+        # reached Notion.
+        props = build_notion_properties(
+            "t", "s", "~/Projects/clone -- review, 2026-08-16", ["a,b", "  ", "ok"]
+        )
+
+        assert "," not in props["Project"]["select"]["name"]
+        assert props["Tags"]["multi_select"] == [{"name": "a b"}, {"name": "ok"}]
+
+    def test_oversized_project_capped_to_notion_limit(self):
+        props = build_notion_properties("t", "s", "P" * 300, [])
+
+        assert len(props["Project"]["select"]["name"]) == 100
+
     def test_long_solution_chunked_under_2000(self):
         props = build_notion_properties("t", "x" * 4500, "General", [])
         chunks = props["Solution"]["rich_text"]

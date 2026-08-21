@@ -54,7 +54,7 @@ keyring==25.7.0
 loguru==0.7.3
 markdown-it-py==4.2.0
 markupsafe==3.0.3
-mcp==2.0.0
+mcp==1.29.0
 mcp-types==2.0.0
 mdurl==0.1.2
 mmh3==5.2.1

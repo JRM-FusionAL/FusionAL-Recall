@@ -160,15 +160,32 @@ class NotionClient:
         }
         try:
             data = self._post("/pages", payload, "2025-09-03")
-        except NotionSyncError:
+        except NotionSyncError as exc:
+            # Legacy fallback for workspaces still on database_id parents. When
+            # _ds_id is a data source id the legacy attempt always 404s, so its
+            # error would mask the real one -- re-raise the original instead.
             payload["parent"] = {"database_id": self._ds_id}
-            data = self._post("/pages", payload, "2022-06-28")
+            try:
+                data = self._post("/pages", payload, "2022-06-28")
+            except NotionSyncError:
+                raise exc from None
         return data["id"]
 
 
 def _chunk_rich_text(content: str, limit: int = 2000) -> list[dict]:
     chunks = [content[i : i + limit] for i in range(0, len(content), limit)] or [""]
     return [{"text": {"content": c}} for c in chunks]
+
+
+def _select_option_name(value: str, fallback: str) -> str:
+    """Sanitise a select/multi-select option name.
+
+    Notion rejects commas in option names with a 400 validation_error, and
+    callers hand this free text -- `remember`'s `source` becomes Project. A
+    single comma used to fail the whole page create, so scrub instead.
+    """
+    cleaned = value.replace(",", " ").strip()[:100].strip()
+    return cleaned or fallback
 
 
 def build_notion_properties(
@@ -182,9 +199,15 @@ def build_notion_properties(
     return {
         "Issue": {"title": _chunk_rich_text(title)},
         "Solution": {"rich_text": _chunk_rich_text(solution)},
-        "Project": {"select": {"name": project or "General"}},
-        "Tags": {"multi_select": [{"name": t} for t in tags]},
-        "Severity": {"select": {"name": severity}},
+        "Project": {"select": {"name": _select_option_name(project, "General")}},
+        "Tags": {
+            "multi_select": [
+                {"name": name}
+                for name in (_select_option_name(t, "") for t in tags)
+                if name
+            ]
+        },
+        "Severity": {"select": {"name": _select_option_name(severity, "Medium")}},
     }
 
 
