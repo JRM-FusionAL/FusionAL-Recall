@@ -63,6 +63,14 @@ class RecallDB:
 
     def insert_issue(self, issue: Issue) -> None:
         tags_str = ",".join(issue.tags)
+        if issue.notion_page_id:
+            # A Notion page is ONE issue even when its derived si_id changes
+            # (e.g. N-<hex> re-keyed to SI-113 after its title gains the ID):
+            # drop the stale row under the old key so pages never twin.
+            self._conn.execute(
+                "DELETE FROM issues WHERE notion_page_id = ? AND si_id != ?",
+                (issue.notion_page_id, issue.si_id),
+            )
         self._conn.execute(
             """
             INSERT OR REPLACE INTO issues
@@ -154,17 +162,17 @@ class RecallDB:
         return results
 
     def next_si_id(self) -> str:
-        """Return the next available SI-XXX identifier."""
+        """Return the next available SI-XXX identifier.
+
+        Numeric MAX over SI- rows only: lexicographic DESC rewinds at
+        SI-1000 ("SI-999" sorts above it), and N-/PI- rows must never
+        feed the counter.
+        """
         row = self._conn.execute(
-            "SELECT si_id FROM issues ORDER BY si_id DESC LIMIT 1"
+            "SELECT MAX(CAST(substr(si_id, 4) AS INTEGER)) AS n "
+            "FROM issues WHERE si_id LIKE 'SI-%'"
         ).fetchone()
-        if not row:
-            return "SI-001"
-        last = row["si_id"]  # e.g. "SI-029"
-        try:
-            num = int(last.split("-")[1]) + 1
-        except (IndexError, ValueError):
-            num = 1
+        num = (row["n"] or 0) + 1
         return f"SI-{num:03d}"
 
     def count(self) -> int:
