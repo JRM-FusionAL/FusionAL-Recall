@@ -157,3 +157,49 @@ class TestNotionColumns:
         assert db.count() == 1
         assert db.get_issue_by_id("N-cccc3333").notion_edited_at == "2026-07-08T00:00:00.000Z"
         db.close()
+
+    def test_next_si_id_ignores_n_and_pi_rows(self, tmp_path):
+        """N- (Notion-derived) and PI- (legacy) rows must not stall the counter."""
+        from datetime import datetime, timezone
+
+        from recall.db import RecallDB
+        from recall.models import Issue
+
+        db = RecallDB(tmp_path / "t.db")
+        now = datetime.now(timezone.utc)
+        assert db.next_si_id() == "SI-001"
+        db.insert_issue(Issue(si_id="N-aaaa1111", title="notion page", symptoms="", root_cause="", fix="", created_at=now, notion_page_id="aaaa1111-0000"))
+        db.insert_issue(Issue(si_id="PI-009", title="legacy piper", symptoms="", root_cause="", fix="", created_at=now))
+        db.insert_issue(Issue(si_id="SI-112", title="real issue", symptoms="", root_cause="", fix="", created_at=now))
+        assert db.next_si_id() == "SI-113"
+        db.close()
+
+    def test_next_si_id_numeric_past_999(self, tmp_path):
+        """Lexicographic DESC rewinds at SI-1000 ('SI-999' sorts above it)."""
+        from datetime import datetime, timezone
+
+        from recall.db import RecallDB
+        from recall.models import Issue
+
+        db = RecallDB(tmp_path / "t.db")
+        now = datetime.now(timezone.utc)
+        db.insert_issue(Issue(si_id="SI-999", title="a", symptoms="", root_cause="", fix="", created_at=now))
+        db.insert_issue(Issue(si_id="SI-1000", title="b", symptoms="", root_cause="", fix="", created_at=now))
+        assert db.next_si_id() == "SI-1001"
+        db.close()
+
+    def test_rekeyed_page_drops_stale_n_row(self, tmp_path):
+        """A Notion page re-keyed from N-<hex> to SI-XXX must not twin."""
+        from datetime import datetime, timezone
+
+        from recall.db import RecallDB
+        from recall.models import Issue
+
+        db = RecallDB(tmp_path / "t.db")
+        now = datetime.now(timezone.utc)
+        db.insert_issue(Issue(si_id="N-dddd4444", title="synced no id yet", symptoms="", root_cause="", fix="", created_at=now, notion_page_id="dddd4444-0000", notion_edited_at="2026-08-24T00:00:00.000Z"))
+        db.insert_issue(Issue(si_id="SI-113", title="SI-113 — synced no id yet", symptoms="", root_cause="", fix="", created_at=now, notion_page_id="dddd4444-0000", notion_edited_at="2026-08-24T01:00:00.000Z"))
+        assert db.count() == 1
+        assert db.get_issue_by_id("N-dddd4444") is None
+        assert db.get_issue_by_id("SI-113") is not None
+        db.close()

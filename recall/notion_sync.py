@@ -19,7 +19,7 @@ from .models import Issue
 
 log = logging.getLogger(__name__)
 
-_SI_ID = re.compile(r"\bSI-\d{3}\b")
+_SI_ID = re.compile(r"\bSI-\d{3,}\b")
 
 
 def parse_solution(text: str) -> dict[str, str]:

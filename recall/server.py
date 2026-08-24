@@ -141,9 +141,14 @@ def remember(
     client = get_notion()
     if client is not None:
         solution = f"Symptoms: {symptoms}\nRoot cause: {root_cause}\nFix: {fix}"
+        # Embed the SI-ID in the page title: derive_si_id() re-keys synced
+        # pages off title-carried IDs, so without this the canonical page
+        # loses its number on the next sync and the counter can rewind
+        # (the SI-112-assigned-three-times bug, 2026-08-24).
+        notion_title = title if si_id in title else f"{si_id} — {title}"
         try:
             notion_page_id = client.create_page(
-                build_notion_properties(title, solution, source, tags or [])
+                build_notion_properties(notion_title, solution, source, tags or [])
             )
         except Exception as exc:
             log.warning("remember: Notion write failed, saving locally only: %s", exc)
