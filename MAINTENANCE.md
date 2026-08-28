@@ -173,3 +173,8 @@ Labeled new issues with 'triage'.
 No outdated dependencies found.
 Labeled new issues with 'triage'.
 --
+## Maintenance Run: 2026-08-28 02:03:41
+Outdated dependencies found: 3 packages (cuda-pathfinder, huggingface-hub, platformdirs)
+Resolution attempt: packages upgraded via uv but resolver gate failed (SI-115 - new pins unsatisfiable). No PR opened (correct gate behavior).
+No unlabeled issues found.
+Branch dependency-update-20260828020159 cleaned up.
