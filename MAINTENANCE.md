@@ -178,3 +178,22 @@ Outdated dependencies found: 3 packages (cuda-pathfinder, huggingface-hub, platf
 Resolution attempt: packages upgraded via uv but resolver gate failed (SI-115 - new pins unsatisfiable). No PR opened (correct gate behavior).
 No unlabeled issues found.
 Branch dependency-update-20260828020159 cleaned up.
+
+## Maintenance Run: 2026-08-29 02:00:01
+No outdated dependencies found.
+Labeled new issues with 'triage'.
+--
+
+## Maintenance Run: 2026-08-29 02:01:24
+Pre-run verification: venv uses python3.12 (verified); `uv` installed at /home/jrm_fusional/.local/bin/uv (0.11.25); script ran via bash (.hermes/maintenance.sh) — no raw `pip` invoked, avoiding IncompleteRead errors.
+Outdated check (uv pip list --outdated --format json): 4 packages after protected filtering: coverage (7.15.4→7.16.0), nvidia-cudnn-cu13 (9.24.0.43→9.25.1.1), triton (3.7.1→3.8.0), typer (0.27.1→0.27.2). Protected skipped per SI-111 guard: mcp (2.1.1 — removes fastmcp), pydantic (2.13.5), pydantic-core (2.46.4 — must match pydantic).
+Branch created: dependency-update-20260829020128. Upgrades applied via `uv pip install --upgrade`. Resolver gate (SI-115) failed on new requirements.txt pins (unsatisfiable with torch/CUDA stack) — previous requirements.txt restored correctly. Validation passed: `import mcp.server.fastmcp; import recall.server` clean (IncompleFieldDefinitionWarning is expected, non-fatal). No PR opened (correct gate behavior — do not commit broken pins). CI wait / merge / label skipped (no PR; 0 unlabeled open issues via `gh issue list`). Summary posted.
+--
+
+## Maintenance Run: 2026-09-05 04:30:05
+Outdated dependencies found: 41 packages (after protecting fastmcp, fastmcp-slim, mcp, mcp-types, pydantic, pydantic-settings, pydantic-core per SI-111).
+PR #72 opened (branch dependency-update-20260905042153). CI passed — PR merged via squash.
+Validation passed: import mcp.server.fastmcp; import recall.server clean.
+Unlabeled issues: none found.
+Maintenance script (.hermes/maintenance.sh) fixed: line 209 syntax error (incomplete log string) and protection regex extended to include fastmcp/fastmcp-slim.
+--
