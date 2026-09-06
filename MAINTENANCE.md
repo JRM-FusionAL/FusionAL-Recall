@@ -196,4 +196,7 @@ PR #72 opened (branch dependency-update-20260905042153). CI passed — PR merged
 Validation passed: import mcp.server.fastmcp; import recall.server clean.
 Unlabeled issues: none found.
 Maintenance script (.hermes/maintenance.sh) fixed: line 209 syntax error (incomplete log string) and protection regex extended to include fastmcp/fastmcp-slim.
+
+## Maintenance Run: 2026-09-06 02:04:02
+Outdated dependencies found: 18 packages. Maintenance script ran via `uv pip` (no IncompleteRead errors), protected packages (fastmcp, mcp, pydantic-core, etc.) skipped per SI-111 guard. Resolver gate triggered: `uv pip freeze` produced pins that conflicted with torch==2.14.0 (cuda-toolkit, mpmath) and pydantic-core duplicate — requirements.txt restored correctly, branch NOT committed. venv kept upgraded versions of anyio, sse-starlette. Post-hoc fix: selective update of requirements.txt with only resolver-safe pins (anyio==4.15.1, sse-starlette==3.4.11). PR #73 opened, CI passed (2 Test checks SUCCESS, CodeRabbit SUCCESS), merged via squash. Validation passed: import mcp.server.fastmcp; import recall.server clean. No unlabeled open issues. Deps updated: anyio 4.15.0→4.15.1, sse-starlette 3.4.10→3.4.11.
 --
