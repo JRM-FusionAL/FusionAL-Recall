@@ -200,3 +200,9 @@ Maintenance script (.hermes/maintenance.sh) fixed: line 209 syntax error (incomp
 ## Maintenance Run: 2026-09-06 02:04:02
 Outdated dependencies found: 18 packages. Maintenance script ran via `uv pip` (no IncompleteRead errors), protected packages (fastmcp, mcp, pydantic-core, etc.) skipped per SI-111 guard. Resolver gate triggered: `uv pip freeze` produced pins that conflicted with torch==2.14.0 (cuda-toolkit, mpmath) and pydantic-core duplicate — requirements.txt restored correctly, branch NOT committed. venv kept upgraded versions of anyio, sse-starlette. Post-hoc fix: selective update of requirements.txt with only resolver-safe pins (anyio==4.15.1, sse-starlette==3.4.11). PR #73 opened, CI passed (2 Test checks SUCCESS, CodeRabbit SUCCESS), merged via squash. Validation passed: import mcp.server.fastmcp; import recall.server clean. No unlabeled open issues. Deps updated: anyio 4.15.0→4.15.1, sse-starlette 3.4.10→3.4.11.
 --
+
+## Maintenance Run: 2026-09-07 02:05 UTC
+Outdated dependencies found: 6 packages (fastmcp 3.4.7→4.0.3, fastmcp-slim 3.4.7→4.0.3, mcp 1.29.0→2.1.1, mcp-types 2.0.0→2.1.1, pydantic 2.13.4→2.13.5, pydantic-core 2.46.4→2.48.0).
+All are PROTECTED per SI-111 — exact pins required for mcp.server.fastmcp compatibility and pydantic/pydantic-core version matching. No auto-upgrade performed.
+No unlabeled issues found.
+--
