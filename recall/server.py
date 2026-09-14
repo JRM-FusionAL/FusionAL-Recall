@@ -127,7 +127,6 @@ def remember(
         RememberResult with the new SI-ID and confirmation message.
     """
     from .models import Issue, RememberResult
-    from .notion_sync import build_notion_properties
 
     db = get_db()
     engine = get_engine()
@@ -135,23 +134,11 @@ def remember(
     si_id = db.next_si_id()
     blob = engine.embed(f"{title} {symptoms} {root_cause}")
 
-    # Notion is the canonical registry — write there first, but never
-    # let a Notion outage block local logging.
+    # Local-first by design. Agents must not spend a request round-trip on
+    # Notion: recall.db is the operational index, and the sync cadence pushes
+    # unsynced rows to Notion asynchronously. This also means a Notion outage
+    # cannot delay or block logging a solved issue.
     notion_page_id: str | None = None
-    client = get_notion()
-    if client is not None:
-        solution = f"Symptoms: {symptoms}\nRoot cause: {root_cause}\nFix: {fix}"
-        # Embed the SI-ID in the page title: derive_si_id() re-keys synced
-        # pages off title-carried IDs, so without this the canonical page
-        # loses its number on the next sync and the counter can rewind
-        # (the SI-112-assigned-three-times bug, 2026-08-24).
-        notion_title = title if si_id in title else f"{si_id} — {title}"
-        try:
-            notion_page_id = client.create_page(
-                build_notion_properties(notion_title, solution, source, tags or [])
-            )
-        except Exception as exc:
-            log.warning("remember: Notion write failed, saving locally only: %s", exc)
 
     issue = Issue(
         si_id=si_id,
@@ -167,6 +154,7 @@ def remember(
         notion_page_id=notion_page_id,
     )
     db.insert_issue(issue)
+    db.mark_notion_sync_pending(si_id)
 
     result = RememberResult(
         si_id=si_id,
@@ -243,9 +231,10 @@ def _on_startup() -> None:
 
     client = get_notion()
     if client is not None:
-        from .notion_sync import sync_from_notion
+        from .notion_sync import sync_from_notion, sync_to_notion
         synced = sync_from_notion(db, engine, client)
-        log.info("startup: notion sync upserted %d issue(s)", synced)
+        pushed = sync_to_notion(db, client)
+        log.info("startup: notion sync pulled %d issue(s), pushed %d local issue(s)", synced, pushed)
     else:
         log.info("startup: NOTION_TOKEN not set, notion sync disabled")
     log.info("startup: DB ready with %d issues", db.count())
@@ -260,11 +249,13 @@ def _start_sync_thread() -> None:
     import time
 
     def _loop() -> None:
-        from .notion_sync import sync_from_notion
+        from .notion_sync import sync_from_notion, sync_to_notion
         while True:
             time.sleep(NOTION_SYNC_INTERVAL)
             try:
-                sync_from_notion(get_db(), get_engine(), client)
+                db = get_db()
+                sync_from_notion(db, get_engine(), client)
+                sync_to_notion(db, client)
             except Exception as exc:  # never kill the thread
                 log.warning("background notion sync failed: %s", exc)
 

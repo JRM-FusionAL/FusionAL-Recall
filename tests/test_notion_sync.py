@@ -265,7 +265,7 @@ class TestSyncFromNotion:
         db.close()
 
 
-class TestRememberDualWrite:
+class TestRememberLocalFirst:
     def _setup(self, tmp_path, monkeypatch):
         from recall import server
 
@@ -278,15 +278,28 @@ class TestRememberDualWrite:
         monkeypatch.setattr(server, "get_engine", lambda: engine)
         return server
 
-    def test_notion_success_stores_page_id(self, tmp_path, monkeypatch):
+    def test_remember_is_local_first_and_marks_sync_pending(self, tmp_path, monkeypatch):
+        server = self._setup(tmp_path, monkeypatch)
+        client = MagicMock()
+        monkeypatch.setattr(server, "get_notion", lambda: client)
+        result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
+        assert result["notion_synced"] is False
+        stored = server.get_db().get_issue_by_id(result["si_id"])
+        assert stored.notion_page_id is None
+        assert stored.notion_sync_pending is True
+        client.create_page.assert_not_called()
+
+    def test_sync_pushes_pending_local_issue(self, tmp_path, monkeypatch):
         server = self._setup(tmp_path, monkeypatch)
         client = MagicMock()
         client.create_page.return_value = "page-123"
         monkeypatch.setattr(server, "get_notion", lambda: client)
         result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
-        assert result["notion_synced"] is True
+        from recall.notion_sync import sync_to_notion
+        assert sync_to_notion(server.get_db(), client) == 1
         stored = server.get_db().get_issue_by_id(result["si_id"])
         assert stored.notion_page_id == "page-123"
+        assert stored.notion_sync_pending is False
         sent = client.create_page.call_args.args[0]
         assert "Symptoms: s" in sent["Solution"]["rich_text"][0]["text"]["content"]
 

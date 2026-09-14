@@ -52,6 +52,8 @@ class RecallDB:
             self._conn.execute("ALTER TABLE issues ADD COLUMN notion_page_id TEXT")
         if "notion_edited_at" not in cols:
             self._conn.execute("ALTER TABLE issues ADD COLUMN notion_edited_at TEXT")
+        if "notion_sync_pending" not in cols:
+            self._conn.execute("ALTER TABLE issues ADD COLUMN notion_sync_pending INTEGER NOT NULL DEFAULT 0")
         self._conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_notion_page ON issues(notion_page_id)"
         )
@@ -76,8 +78,8 @@ class RecallDB:
             INSERT OR REPLACE INTO issues
                 (si_id, title, symptoms, root_cause, fix, source,
                  tags, verified_at, created_at, tier, embedding,
-                 notion_page_id, notion_edited_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 notion_page_id, notion_edited_at, notion_sync_pending)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 issue.si_id,
@@ -93,6 +95,7 @@ class RecallDB:
                 issue.embedding,
                 issue.notion_page_id,
                 issue.notion_edited_at,
+                1 if issue.notion_sync_pending else 0,
             ),
         )
         self._conn.commit()
@@ -186,6 +189,30 @@ class RecallDB:
         ).fetchall()
         return {r["notion_page_id"]: r["notion_edited_at"] or "" for r in rows}
 
+    def unsynced_issues(self) -> List[Issue]:
+        """Return new local-first issues explicitly awaiting Notion sync."""
+        rows = self._conn.execute(
+            "SELECT * FROM issues WHERE notion_sync_pending = 1 AND notion_page_id IS NULL "
+            "ORDER BY created_at"
+        ).fetchall()
+        return [self._row_to_issue(r) for r in rows]
+
+    def link_notion_page(self, si_id: str, page_id: str, edited_at: str = "") -> None:
+        """Record the Notion mirror link after an async push succeeds."""
+        self._conn.execute(
+            "UPDATE issues SET notion_page_id = ?, notion_edited_at = ?, notion_sync_pending = 0 "
+            "WHERE si_id = ?",
+            (page_id, edited_at or None, si_id),
+        )
+        self._conn.commit()
+
+    def mark_notion_sync_pending(self, si_id: str) -> None:
+        """Mark a newly-created local issue for the next sync cadence."""
+        self._conn.execute(
+            "UPDATE issues SET notion_sync_pending = 1 WHERE si_id = ?", (si_id,)
+        )
+        self._conn.commit()
+
     def close(self) -> None:
         self._conn.close()
 
@@ -231,4 +258,5 @@ class RecallDB:
             embedding=bytes(row["embedding"]) if row["embedding"] else None,
             notion_page_id=row["notion_page_id"],
             notion_edited_at=row["notion_edited_at"],
+            notion_sync_pending=bool(row["notion_sync_pending"]),
         )

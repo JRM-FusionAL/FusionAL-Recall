@@ -1,6 +1,8 @@
-"""Sync the Notion Solved Issues database into the local recall index.
+"""Synchronize the local recall index with its Notion mirror.
 
-Notion is the canonical registry; recall.db is a derived semantic index.
+`recall.db` is the operational source of truth. New agent entries are written
+locally first and explicitly marked for asynchronous push to Notion; the same
+cadence pulls Notion-side updates back into the local index.
 See docs/superpowers/specs/2026-07-07-notion-sync-design.md.
 """
 
@@ -209,6 +211,32 @@ def build_notion_properties(
         },
         "Severity": {"select": {"name": _select_option_name(severity, "Medium")}},
     }
+
+
+def sync_to_notion(db: "RecallDB", client: NotionClient) -> int:
+    """Push local-first issues that have no Notion page yet.
+
+    This is intentionally cadence-driven: agent requests write only to the
+    local SQLite index. A failed page create leaves the row unsynced so the
+    next cadence retries it without losing the local entry.
+    """
+    pushed = 0
+    for issue in db.unsynced_issues():
+        notion_title = issue.title if issue.si_id in issue.title else f"{issue.si_id} — {issue.title}"
+        solution = (
+            f"Symptoms: {issue.symptoms}\n"
+            f"Root cause: {issue.root_cause}\n"
+            f"Fix: {issue.fix}"
+        )
+        try:
+            page_id = client.create_page(
+                build_notion_properties(notion_title, solution, issue.source, issue.tags)
+            )
+            db.link_notion_page(issue.si_id, page_id)
+            pushed += 1
+        except Exception as exc:
+            log.warning("notion sync: push failed for %s, will retry: %s", issue.si_id, exc)
+    return pushed
 
 
 def sync_from_notion(db: "RecallDB", engine: "EmbeddingEngine", client: NotionClient) -> int:
