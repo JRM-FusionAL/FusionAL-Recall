@@ -6,8 +6,9 @@ Global rules in `~/.claude/CLAUDE.md` apply first.
 ## Project Identity
 
 **fusional-recall** is a standalone FastMCP server providing semantic search over the
-solved-issues registry. The **Notion Solved Issues DB is canonical** (data source
-`836a9fe2-738d-4fdf-90a5-4364e1b36f1f`); `recall.db` is a derived index synced from it
+local `recall.db` solved-issues index. `recall.db` is the operational source of truth:
+agent `remember` calls write locally first and return immediately. A background sync
+pushes explicitly pending new rows to the Notion mirror and pulls Notion-side updates
 at startup and hourly. `SOLVED-ISSUES.md` remains only as an empty-DB seed fallback.
 Embeddings via fastembed (ONNX). See `docs/superpowers/specs/2026-07-07-notion-sync-design.md`.
 
@@ -26,7 +27,7 @@ DB:   `./recall.db` (local) or `/data/recall.db` (Docker)
 
 Before debugging any error in this repo:
 1. State "Recall check: searching solved issues for <fingerprint>"
-2. Call the `recall` MCP tool (localhost:8107) — or query the Notion Solved Issues DB
+2. Call the `recall` MCP tool (localhost:8107), which searches local `recall.db`
 3. State outcome
 
 ## Auto-Log Triggers (this project)
@@ -60,7 +61,7 @@ docker compose up --build
 | Tool         | Purpose                                    |
 |--------------|--------------------------------------------|
 | `recall`     | Semantic search — returns ranked SI list   |
-| `remember`   | Log new SI entry to Notion (canonical) + local index |
+| `remember`   | Log new SI entry to local index; sync cadence pushes Notion mirror |
 | `list_recent`| List N newest issues                       |
 | `verify`     | Fetch specific issue by SI-ID              |
 | `get`        | Alias for `verify`                         |
