@@ -357,7 +357,8 @@ class TestServerTools:
                 tags=["test"],
             )
             assert result["si_id"] == "SI-001"
-            assert result["notion_synced"] is False  # must not touch live Notion
+            # Local-first: the row is queued, never written inline.
+            assert result["notion_sync"] == "pending"
             assert "Logged SI-001" in result["message"]
             assert tmp_db.count() == 1
         finally:

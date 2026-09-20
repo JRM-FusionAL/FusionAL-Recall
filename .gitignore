@@ -15,3 +15,12 @@ build/
 .coverage
 htmlcov/
 .hermes/
+
+# Local SQLite index and any backup of it. This repo is PUBLIC and the DB
+# carries every solved issue — business detail, hostnames, prospect names.
+# A `git add -A` swept recall.db.bak-20260915-verifier (247 issues) into a
+# commit on 2026-09-20; caught before push.
+recall.db
+recall.db.bak-*
+recall.db-wal
+recall.db-shm

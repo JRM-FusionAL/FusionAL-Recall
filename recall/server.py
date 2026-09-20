@@ -161,8 +161,13 @@ def remember(
         title=title,
         created_at=issue.created_at,
         tier=tier,
-        message=f"Logged {si_id}: {title}",
-        notion_synced=notion_page_id is not None,
+        message=f"Logged {si_id}: {title} — queued for Notion sync",
+        # Always "pending" here: the Notion write is deliberately deferred to
+        # the sync cadence, so it has not happened yet and saying so is the
+        # honest answer. The previous field reported `notion_synced: false`
+        # on every successful call, which reads as a failed write rather than
+        # a deferred one — see the note on RememberResult.notion_sync.
+        notion_sync="pending",
     )
     return result.model_dump()
 

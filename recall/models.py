@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -67,4 +67,20 @@ class RememberResult(BaseModel):
     created_at: datetime
     tier: str
     message: str
-    notion_synced: bool = False
+
+    #: Notion mirror state at the moment remember() returned. "pending" is the
+    #: normal, healthy answer: remember() is local-first by design and never
+    #: writes Notion inline, so the row is queued for the sync cadence instead.
+    #:
+    #: This replaces a bare `notion_synced: bool` that was computed from a
+    #: variable hardcoded to None immediately above it, making it a constant
+    #: False. Every successful call reported `notion_synced: false`, which
+    #: reads as a failed write — two separate sessions concluded the Notion
+    #: sync was broken and one logged it as a defect (SI-170) when nothing was
+    #: wrong. The pages were in Notion the whole time.
+    notion_sync: Literal["pending", "synced", "disabled"] = "pending"
+
+    @property
+    def notion_synced(self) -> bool:
+        """Retained for callers that read the old boolean."""
+        return self.notion_sync == "synced"

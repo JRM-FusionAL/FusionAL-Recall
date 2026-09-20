@@ -283,7 +283,7 @@ class TestRememberLocalFirst:
         client = MagicMock()
         monkeypatch.setattr(server, "get_notion", lambda: client)
         result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
-        assert result["notion_synced"] is False
+        assert result["notion_sync"] == "pending"
         stored = server.get_db().get_issue_by_id(result["si_id"])
         assert stored.notion_page_id is None
         assert stored.notion_sync_pending is True
@@ -309,14 +309,14 @@ class TestRememberLocalFirst:
         client.create_page.side_effect = NotionSyncError("down")
         monkeypatch.setattr(server, "get_notion", lambda: client)
         result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
-        assert result["notion_synced"] is False
+        assert result["notion_sync"] == "pending"
         assert server.get_db().get_issue_by_id(result["si_id"]) is not None
 
     def test_no_token_behaves_as_before(self, tmp_path, monkeypatch):
         server = self._setup(tmp_path, monkeypatch)
         monkeypatch.setattr(server, "get_notion", lambda: None)
         result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
-        assert result["notion_synced"] is False
+        assert result["notion_sync"] == "pending"
 
 
 class TestStartupSync:
@@ -347,3 +347,25 @@ class TestStartupSync:
         monkeypatch.setattr(server, "get_notion", lambda: client)
         server._on_startup()  # must not raise
         assert server.get_db().count() == 0
+
+
+def test_remember_reports_pending_not_a_bare_false(tmp_path, monkeypatch):
+    """`notion_synced: false` was computed from a variable hardcoded to None
+    on the line above, so every successful call reported it. Two sessions read
+    that as a failed write and one logged it as a defect (SI-170) while the
+    pages were in Notion the whole time. The response must distinguish
+    "deferred" from "failed".
+    """
+    from recall.models import RememberResult
+    from datetime import datetime, timezone
+
+    r = RememberResult(si_id="SI-001", title="t",
+                       created_at=datetime.now(timezone.utc),
+                       tier="personal", message="m")
+    assert r.notion_sync == "pending"
+    assert r.notion_synced is False
+    assert "notion_synced" not in r.model_dump()
+
+    synced = r.model_copy(update={"notion_sync": "synced"})
+    assert synced.notion_synced is True
+
