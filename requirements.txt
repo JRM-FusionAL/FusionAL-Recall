@@ -94,7 +94,7 @@ pydantic==2.13.4
 pydantic-core==2.46.4
 pydantic-settings==2.15.0
 pygments==2.21.0
-pyjwt==2.13.0
+pyjwt==2.15.1
 py-key-value-aio==0.4.5
 pyperclip==1.11.0
 py-rust-stemmers==0.1.8
@@ -132,7 +132,7 @@ typer==0.27.2
 typing-extensions==4.16.0
 typing-inspection==0.4.4
 uncalled-for==0.4.0
-urllib3==2.7.0
+urllib3==2.8.0
 uvicorn==0.52.4
 watchfiles==1.2.0
 websockets==17.1
