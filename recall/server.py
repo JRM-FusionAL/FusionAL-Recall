@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
+import stat
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 load_dotenv()
 
@@ -23,13 +26,90 @@ DB_PATH = os.getenv("RECALL_DB_PATH", "./recall.db")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 DEFAULT_TIER = os.getenv("DEFAULT_TIER", "personal")
 SOLVED_ISSUES_PATH = os.getenv("SOLVED_ISSUES_PATH", None)
-HOST = os.getenv("RECALL_HOST", "0.0.0.0")
+# Loopback by default. Containers override this to 0.0.0.0 inside their own
+# network namespace; the host-side exposure is then set by the port publish
+# (docker-compose binds 127.0.0.1:8107).
+HOST = os.getenv("RECALL_HOST", "127.0.0.1")
 PORT = int(os.getenv("RECALL_PORT", "8107"))
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_DATA_SOURCE_ID = os.getenv(
     "NOTION_DATA_SOURCE_ID", "836a9fe2-738d-4fdf-90a5-4364e1b36f1f"
 )
 NOTION_SYNC_INTERVAL = int(os.getenv("NOTION_SYNC_INTERVAL", "3600"))
+
+# ------------------------------------------------------------------
+# Write-tool authentication
+#
+# Optional. When a token is configured, `remember` requires
+# "Authorization: Bearer <token>" on the HTTP request. The token comes from
+# RECALL_AUTH_TOKEN, or from the file named by RECALL_AUTH_TOKEN_FILE (keep it
+# mode 600). When neither is set, writes are accepted without a token, which
+# keeps loopback-only local use working; startup logs a warning instead.
+# Read tools are not gated by this token.
+# ------------------------------------------------------------------
+
+AUTH_TOKEN_ENV = "RECALL_AUTH_TOKEN"
+AUTH_TOKEN_FILE_ENV = "RECALL_AUTH_TOKEN_FILE"
+
+
+def _configured_write_token() -> str | None:
+    """Return the write token, or None when auth is not configured.
+
+    Read on each call so a rotated token file takes effect without a restart.
+    A configured token file that cannot be read raises, so the server fails
+    closed instead of silently dropping authentication.
+    """
+    token_file = os.getenv(AUTH_TOKEN_FILE_ENV, "").strip()
+    if token_file:
+        path = Path(token_file)
+        try:
+            mode = path.stat().st_mode
+            token = path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise RuntimeError(f"{AUTH_TOKEN_FILE_ENV} is set but unreadable: {exc.strerror}") from exc
+        if stat.S_ISREG(mode) and mode & 0o077:
+            log.warning("%s is group/world accessible; run chmod 600 on it", AUTH_TOKEN_FILE_ENV)
+        if token:
+            return token
+    token = os.getenv(AUTH_TOKEN_ENV, "").strip()
+    return token or None
+
+
+def _warn_if_writes_unauthenticated() -> None:
+    if _configured_write_token() is None:
+        log.warning(
+            "No %s or %s set: remember() accepts unauthenticated writes. "
+            "Keep RECALL_HOST on loopback, or set a write token.",
+            AUTH_TOKEN_ENV,
+            AUTH_TOKEN_FILE_ENV,
+        )
+
+
+def _require_write_auth(ctx: Context) -> None:
+    """Raise PermissionError unless the HTTP caller presents the write token.
+
+    ctx is None-safe: in-process calls and stdio transport have no HTTP request
+    and are local to the host, so they are not checked.
+    """
+    expected = _configured_write_token()
+    if expected is None:
+        return
+    request = None
+    if ctx is not None:
+        try:
+            request = ctx.request_context.request
+        except ValueError:
+            request = None
+    if request is None:
+        return
+    header = request.headers.get("authorization", "")
+    scheme, _, presented = header.partition(" ")
+    presented = presented.strip()
+    if scheme.lower() != "bearer" or not presented or not hmac.compare_digest(
+        presented.encode("utf-8"), expected.encode("utf-8")
+    ):
+        raise PermissionError("remember requires a valid bearer token")
+
 
 # ------------------------------------------------------------------
 # Singletons (initialised lazily on first request so tests can inject mocks)
@@ -111,6 +191,7 @@ def remember(
     source: str = "",
     tags: list[str] | None = None,
     tier: str = "personal",
+    ctx: Context = None,
 ) -> dict:
     """Log a new solved issue to the registry and assign the next SI-ID.
 
@@ -125,9 +206,14 @@ def remember(
 
     Returns:
         RememberResult with the new SI-ID and confirmation message.
+
+    Raises:
+        PermissionError: a write token is configured and the request did not
+            present it as a bearer token.
     """
     from .models import Issue, RememberResult
 
+    _require_write_auth(ctx)
     db = get_db()
     engine = get_engine()
 
@@ -282,6 +368,7 @@ async def health_check(request: Request) -> JSONResponse:
 
 
 def main() -> None:  # pragma: no cover
+    _warn_if_writes_unauthenticated()
     _on_startup()
     _start_sync_thread()
     app.run(transport="streamable-http")

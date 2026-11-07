@@ -15,6 +15,7 @@ RUN mkdir -p /data
 
 EXPOSE 8107
 
+# In-container bind address. The host publish in docker-compose is 127.0.0.1.
 ENV RECALL_HOST=0.0.0.0
 ENV RECALL_PORT=8107
 ENV RECALL_DB_PATH=/data/recall.db

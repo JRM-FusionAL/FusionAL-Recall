@@ -142,7 +142,7 @@ docker run -p 8107:8107 \
 
 ```bash
 docker-compose up -d
-# Recalls listens on localhost:8107
+# Recall listens on 127.0.0.1:8107 on the host (loopback only)
 # recall.db volume persists embeddings across restarts
 ```
 
@@ -163,7 +163,9 @@ Tests validate:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `RECALL_HOST` | `0.0.0.0` | MCP server bind address |
+| `RECALL_HOST` | `127.0.0.1` | MCP server bind address (containers set `0.0.0.0` internally) |
+| `RECALL_AUTH_TOKEN` | unset | Bearer token required by `remember`. Unset = no write auth (warned at startup) |
+| `RECALL_AUTH_TOKEN_FILE` | unset | Same as above, read from a file (keep mode 600). Takes precedence over `RECALL_AUTH_TOKEN` when non-empty |
 | `RECALL_PORT` | `8107` | MCP server port |
 | `RECALL_DB_PATH` | `./recall.db` | SQLite database file |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model |

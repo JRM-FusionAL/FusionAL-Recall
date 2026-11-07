@@ -4,15 +4,20 @@ services:
     image: fusional-recall:latest
     container_name: fusional-recall
     restart: unless-stopped
+    # Host side is loopback only. RECALL_HOST=0.0.0.0 below is the bind
+    # address inside the container, which the publish needs.
     ports:
-      - "${RECALL_PORT:-8107}:8107"
+      - "127.0.0.1:${RECALL_PORT:-8107}:8107"
     volumes:
       - recall_data:/app/data
       - ${SOLVED_ISSUES_PATH:-/dev/null}:/kb/SOLVED-ISSUES.md:ro
+      # Optional write token file (mode 600). Leave unset for no write auth.
+      - ${RECALL_AUTH_TOKEN_FILE_HOST:-/dev/null}:/run/secrets/recall_auth_token:ro
     environment:
       RECALL_HOST: "0.0.0.0"
       RECALL_PORT: "8107"
       RECALL_DB_PATH: "/app/data/recall.db"
+      RECALL_AUTH_TOKEN_FILE: "/run/secrets/recall_auth_token"
       EMBEDDING_MODEL: "${EMBEDDING_MODEL:-all-MiniLM-L6-v2}"
       DEFAULT_TIER: "${DEFAULT_TIER:-personal}"
       SOLVED_ISSUES_PATH: "/kb/SOLVED-ISSUES.md"

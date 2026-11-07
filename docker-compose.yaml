@@ -5,12 +5,14 @@ services:
     build: .
     container_name: fusional-recall
     restart: unless-stopped
+    # Loopback only on the host. RECALL_HOST=0.0.0.0 is the in-container bind.
     ports:
-      - "8107:8107"
+      - "127.0.0.1:8107:8107"
     environment:
       RECALL_HOST: "0.0.0.0"
       RECALL_PORT: "8107"
       RECALL_DB_PATH: "/data/recall.db"
+      # No write-token mount in this file. Use docker-compose.yml for bearer auth.
       EMBEDDING_MODEL: "all-MiniLM-L6-v2"
       DEFAULT_TIER: "personal"
       # Mount your SOLVED-ISSUES.md path here:
