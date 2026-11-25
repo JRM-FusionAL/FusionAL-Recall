@@ -196,7 +196,7 @@ Each `get_*()` factory lazy-initializes on first call. Tests inject mocks by ove
 ### Docker
 
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.12-slim
 # Installs requirements.txt, copies recall/ module
 # Default: RECALL_HOST=0.0.0.0 RECALL_PORT=8107 RECALL_DB_PATH=/data/recall.db
 CMD ["python", "-m", "recall.server"]
