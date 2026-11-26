@@ -10,14 +10,19 @@ This script is idempotent and safe to run on a timer:
     python export_solved_issues.py                  # dry-run: report, write nothing
     python export_solved_issues.py --write          # write the file (keeps .bak)
 
+SI entries already in the file are NOT updated from the database: the file's
+block wins. A database correction therefore does not reach the file, a hand
+edit does not reach the database, and one SI number can name two different
+issues. Each run reports these conflicts but does not resolve them, because
+either side may hold the only good copy.
+
 What it preserves: the preamble (everything before the first `## SI-###:` entry)
 and every human-authored section whose heading is NOT an SI entry (TEMPLATE
 blocks, narrative follow-through sections). Those are re-emitted after the
 entries, in their original order.
 
-What it regenerates: every recall entry, sorted numerically for SI-### and then
-the non-numeric entries (N-<hex> Notion-only pages, PI-###) in their own
-clearly-marked sections, so no entry can hide from the file again.
+What it generates: SI-### entries that are not yet in the file, in numeric
+order, and every non-numeric entry (N-<hex> Notion-only pages, PI-###).
 
 Exit codes: 0 = in sync (or wrote cleanly), 1 = drift found in dry-run.
 """
@@ -25,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import difflib
 import json
 import re
 import shutil
@@ -100,6 +106,32 @@ def split_existing(text: str):
     return preamble.rstrip() + "\n", file_entries, out
 
 
+def _norm_block(block: str) -> str:
+    """Block text without spacing or trailing rule differences."""
+    return re.sub(r"\s+", " ", block).strip().rstrip("- ").strip()
+
+
+def _title_key(block: str) -> str:
+    title = block.split("\n", 1)[0].split(":", 1)[-1]
+    return re.sub(r"[^a-z0-9]", "", title.lower())
+
+
+def find_conflicts(file_entries: dict[str, str], db_entries: dict[str, str]):
+    """Compare shared SI ids. Return (differing ids, ids whose titles differ a lot)."""
+    differing, titles = [], []
+    for sid in sorted(file_entries.keys() & db_entries.keys(), key=lambda s: int(s[3:])):
+        ours, theirs = file_entries[sid], db_entries[sid]
+        if _norm_block(ours) == _norm_block(theirs):
+            continue
+        differing.append(sid)
+        ratio = difflib.SequenceMatcher(
+            None, _title_key(ours), _title_key(theirs), autojunk=False
+        ).ratio()
+        if ratio < 0.6:
+            titles.append(sid)
+    return differing, titles
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--write", action="store_true", help="write the file (default: dry-run)")
@@ -167,6 +199,13 @@ def main() -> int:
         print(f"FILE-ONLY entries preserved (never migrated to recall db: "
               f"log them via :8107 remember): {' '.join(file_only)}")
     print(f"non-numeric entries listed: {len(notable)}")
+    differing, titles = find_conflicts(file_entries, {f"SI-{n:03d}": b for n, b in numeric})
+    if differing:
+        print(f"CONFLICT: {len(differing)} SI entries differ between file and db "
+              f"(file version kept): {' '.join(differing)}")
+    if titles:
+        print(f"CONFLICT: {len(titles)} of those have very different titles, possibly "
+              f"two issues under one id: {' '.join(titles)}")
 
     if new_text == text:
         print("IN SYNC — nothing to write")
