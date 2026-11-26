@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from recall.models import Issue
 from recall.notion_sync import derive_si_id, map_page_to_issue, parse_solution
 
 
@@ -159,8 +162,9 @@ class TestNotionClient:
 
     def test_create_page_returns_id(self):
         client = NotionClient("tok", "ds-id")
-        with patch("httpx.post", return_value=_mock_response(200, {"id": "new-page"})):
-            assert client.create_page({"Issue": {}}) == "new-page"
+        created = {"id": "new-page", "last_edited_time": "2026-07-07T12:30:00.000Z"}
+        with patch("httpx.post", return_value=_mock_response(200, created)):
+            assert client.create_page({"Issue": {}}) == ("new-page", "2026-07-07T12:30:00.000Z")
 
 
 class TestBuildNotionProperties:
@@ -292,7 +296,7 @@ class TestRememberLocalFirst:
     def test_sync_pushes_pending_local_issue(self, tmp_path, monkeypatch):
         server = self._setup(tmp_path, monkeypatch)
         client = MagicMock()
-        client.create_page.return_value = "page-123"
+        client.create_page.return_value = ("page-123", "2026-07-07T12:30:00.000Z")
         monkeypatch.setattr(server, "get_notion", lambda: client)
         result = server.remember(title="t", symptoms="s", root_cause="r", fix="f")
         from recall.notion_sync import sync_to_notion
@@ -369,3 +373,157 @@ def test_remember_reports_pending_not_a_bare_false(tmp_path, monkeypatch):
     synced = r.model_copy(update={"notion_sync": "synced"})
     assert synced.notion_synced is True
 
+
+class TestPullKeepsLocalIdentityAndFields:
+    """A pull must not re-key a known page or reset what Notion cannot carry."""
+
+    PAGE_ID = "aaaa-1111"
+
+    def _engine(self):
+        engine = MagicMock()
+        engine.embed.return_value = b"\x00" * 16
+        return engine
+
+    def _db(self, tmp_path, si_id="PI-001", **overrides):
+        from recall.db import RecallDB
+
+        fields = dict(
+            si_id=si_id,
+            title="Piper TTS wrapper",
+            symptoms="it broke",
+            root_cause="bad config",
+            fix="fix the config",
+            source="~/Projects/clone, review",
+            tags=["a,b", "python"],
+            verified_at="2026-07",
+            created_at=datetime(2026, 7, 1, 10, 20, 30, 123456, tzinfo=timezone.utc),
+            tier="project",
+            notion_page_id=self.PAGE_ID,
+            notion_edited_at="2026-07-07T12:00:00.000Z",
+        )
+        fields.update(overrides)
+        db = RecallDB(tmp_path / "t.db")
+        db.insert_issue(Issue(**fields))
+        return db
+
+    def _pull(self, db, **page):
+        client = MagicMock()
+        client.query_all_pages.return_value = [_page(page_id=self.PAGE_ID, **page)]
+        return sync_from_notion(db, self._engine(), client)
+
+    @pytest.mark.parametrize("si_id", ["PI-001", "SI-105", "N-aaaa1111"])
+    def test_title_without_id_keeps_local_id(self, tmp_path, si_id):
+        db = self._db(tmp_path, si_id=si_id)
+        assert self._pull(db, title="Piper TTS wrapper, edited") == 1
+        assert db.count() == 1
+        assert db.get_issue_by_id(si_id).title == "Piper TTS wrapper, edited"
+        db.close()
+
+    def test_title_with_different_id_still_rekeys_and_keeps_tier(self, tmp_path):
+        db = self._db(tmp_path, si_id="N-aaaa1111")
+        self._pull(db, title="SI-113 Piper TTS wrapper")
+        assert db.count() == 1
+        assert db.get_issue_by_id("SI-113").tier == "project"
+        db.close()
+
+    def test_leading_pi_id_in_title_is_used(self):
+        assert derive_si_id("abc", "PI-002 — hashcat format") == "PI-002"
+
+    def test_pi_mention_later_in_title_is_not_an_id(self):
+        assert derive_si_id("abc-def", "Follow-up to PI-002") == "N-abcdef"
+
+    def test_real_edit_keeps_local_only_fields(self, tmp_path):
+        db = self._db(tmp_path)
+        self._pull(db, solution="Symptoms: new\nRoot cause: bad config\nFix: fix the config")
+        got = db.get_issue_by_id("PI-001")
+        assert got.symptoms == "new"
+        assert got.tier == "project"
+        assert got.verified_at == "2026-07"
+        assert got.created_at == datetime(2026, 7, 1, 10, 20, 30, 123456, tzinfo=timezone.utc)
+        db.close()
+
+    def test_notion_form_of_local_values_is_not_an_edit(self, tmp_path):
+        """Notion strips commas and the push prefixes the ID onto the title."""
+        symptoms = "log said 'Fix: rerun' then hung"
+        db = self._db(tmp_path, symptoms=symptoms)
+        self._pull(
+            db,
+            title="PI-001 — Piper TTS wrapper",
+            solution=f"Symptoms: {symptoms}\nRoot cause: bad config\nFix: fix the config",
+            project="~/Projects/clone  review",
+            tags=["a", "b", "python"],
+            severity="Medium",
+        )
+        got = db.get_issue_by_id("PI-001")
+        assert got.title == "Piper TTS wrapper"
+        assert got.symptoms == symptoms
+        assert got.root_cause == "bad config"
+        assert got.fix == "fix the config"
+        assert got.source == "~/Projects/clone, review"
+        assert got.tags == ["a", "b", "python"]  # local db splits tags on commas
+        db.close()
+
+    def test_option_casing_from_notion_is_not_an_edit(self, tmp_path):
+        """Notion returns an existing option's casing, not the pushed one."""
+        db = self._db(tmp_path, source="FusionAL-recall", tags=["moa", "Python"])
+        self._pull(db, project="FusionAL-Recall", tags=["MoA", "python"], severity="Medium")
+        got = db.get_issue_by_id("PI-001")
+        assert got.source == "FusionAL-recall"
+        assert got.tags == ["moa", "Python"]
+        db.close()
+
+    @pytest.mark.parametrize("title", ["Piper TTS wrapper", "Piper TTS wrapper, renamed"])
+    def test_provenance_footer_is_not_pulled_into_the_row(self, tmp_path, title):
+        """Some pages keep Source and ID in a Solution footer, Project=General."""
+        db = self._db(tmp_path)
+        self._pull(
+            db,
+            title=title,
+            solution=(
+                "Symptoms: it broke\nRoot cause: bad config\nFix: fix the config"
+                "\n\nSource: ~/Projects/clone, review\nRecall ID: PI-001"
+            ),
+            project="General",
+        )
+        got = db.get_issue_by_id("PI-001")
+        assert got.title == title
+        assert got.fix == "fix the config"
+        assert got.source == "~/Projects/clone, review"
+        db.close()
+
+    def test_changed_source_and_tags_are_applied(self, tmp_path):
+        db = self._db(tmp_path)
+        self._pull(db, project="Other", tags=["new-tag"], severity=None)
+        got = db.get_issue_by_id("PI-001")
+        assert got.source == "Other"
+        assert got.tags == ["new-tag"]
+        db.close()
+
+    def test_missing_edit_time_is_adopted_on_unchanged_pushed_row(self, tmp_path):
+        """Rows linked by older code have no stamp and get one on the next pull."""
+        db = self._db(tmp_path, notion_edited_at=None)
+        self._pull(db, title="PI-001 — Piper TTS wrapper")
+        got = db.get_issue_by_id("PI-001")
+        assert got.tier == "project"
+        assert got.notion_edited_at == "2026-07-07T12:30:00.000Z"
+        db.close()
+
+    def test_push_then_pull_leaves_row_untouched(self, tmp_path):
+        from recall.notion_sync import sync_to_notion
+
+        db = self._db(
+            tmp_path, si_id="SI-400", notion_page_id=None,
+            notion_edited_at=None, notion_sync_pending=True,
+        )
+        before = db.get_issue_by_id("SI-400")
+        client = MagicMock()
+        client.create_page.return_value = (self.PAGE_ID, "2026-07-07T12:30:00.000Z")
+        assert sync_to_notion(db, client) == 1
+        client.query_all_pages.return_value = [
+            _page(page_id=self.PAGE_ID, title="SI-400 — Piper TTS wrapper")
+        ]
+        assert sync_from_notion(db, self._engine(), client) == 0
+        after = db.get_issue_by_id("SI-400")
+        for name in ("title", "source", "tags", "tier", "created_at", "verified_at"):
+            assert getattr(after, name) == getattr(before, name)
+        db.close()
