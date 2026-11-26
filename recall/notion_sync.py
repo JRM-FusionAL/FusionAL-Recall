@@ -22,6 +22,8 @@ from .models import Issue
 log = logging.getLogger(__name__)
 
 _SI_ID = re.compile(r"\bSI-\d{3,}\b")
+# PI- counts only as a title prefix; elsewhere it is read as a mention.
+_PI_PREFIX = re.compile(r"^\s*(PI-\d{3,})\b")
 
 
 def parse_solution(text: str) -> dict[str, str]:
@@ -48,16 +50,22 @@ def parse_solution(text: str) -> dict[str, str]:
     return parts
 
 
-def derive_si_id(page_id: str, title: str) -> str:
-    """Reuse a legacy SI-ID only when the *title* carries one.
+def derive_si_id(page_id: str, title: str, local_id: str | None = None) -> str:
+    """Pick a page's ID: from its *title*, else the linked row's, else N-<hex>.
 
     Body text must not be trusted for identity: an entry that merely
     mentions "see SI-007" would otherwise overwrite the local SI-007 row
     (INSERT OR REPLACE keys on si_id).
     """
+    pi = _PI_PREFIX.match(title)
+    if pi:
+        return pi.group(1)
     m = _SI_ID.search(title)
     if m:
         return m.group(0)
+    if local_id:
+        # Many pages carry no ID in their title (every PI- page, for one).
+        return local_id
     # Full hex, not a prefix: Notion page IDs are time-ordered, so short
     # prefixes collide across pages created near each other.
     return "N-" + page_id.replace("-", "")
@@ -155,7 +163,8 @@ class NotionClient:
                 return pages
             cursor = data.get("next_cursor")
 
-    def create_page(self, properties: dict) -> str:
+    def create_page(self, properties: dict) -> tuple[str, str]:
+        """Create a page and return ``(page_id, last_edited_time)``."""
         payload: dict = {
             "parent": {"type": "data_source_id", "data_source_id": self._ds_id},
             "properties": properties,
@@ -171,7 +180,7 @@ class NotionClient:
                 data = self._post("/pages", payload, "2022-06-28")
             except NotionSyncError:
                 raise exc from None
-        return data["id"]
+        return data["id"], data.get("last_edited_time") or ""
 
 
 def _chunk_rich_text(content: str, limit: int = 2000) -> list[dict]:
@@ -213,6 +222,52 @@ def build_notion_properties(
     }
 
 
+def _notion_title(issue: Issue) -> str:
+    return issue.title if issue.si_id in issue.title else f"{issue.si_id} — {issue.title}"
+
+
+def _notion_solution(issue: Issue) -> str:
+    return f"Symptoms: {issue.symptoms}\nRoot cause: {issue.root_cause}\nFix: {issue.fix}"
+
+
+def _merge_with_local(remote: Issue, local: Issue) -> Issue:
+    """Apply a pulled page to its linked row without losing local data.
+
+    Notion has no tier or verification date, and its creation time is the
+    page's, not the entry's. A push also rewrites some values (ID prefix on
+    the title, commas stripped from options, default severity), so a value
+    that still equals the pushed form of the local one was not edited.
+    """
+    keep: dict = {
+        "tier": local.tier,
+        "created_at": local.created_at,
+        "verified_at": local.verified_at,
+    }
+    if remote.title == _notion_title(local).strip():
+        keep["title"] = local.title
+    # Option names are compared without case: Notion reuses an existing one's.
+    if remote.source.casefold() == _select_option_name(local.source, "General").casefold():
+        keep["source"] = local.source
+    pushed_tags = [n for n in (_select_option_name(t, "") for t in local.tags) if n]
+    remote_tags = [t.casefold() for t in remote.tags]
+    if remote_tags in (
+        [t.casefold() for t in pushed_tags],
+        [t.casefold() for t in pushed_tags + ["severity:Medium"]],
+    ):
+        keep["tags"] = local.tags
+    # Some older pages carry provenance in a Solution footer, with no Project.
+    footer = f"\n\nSource: {local.source}\nRecall ID: {local.si_id}"
+    if remote.fix.endswith(footer):
+        remote = remote.model_copy(update={"fix": remote.fix.removesuffix(footer).rstrip()})
+        if remote.source == "General":
+            keep["source"] = local.source
+    body = ("symptoms", "root_cause", "fix")
+    pushed_body = parse_solution(_notion_solution(local))
+    if all(getattr(remote, k) == pushed_body[k] for k in body):
+        keep.update({k: getattr(local, k) for k in body})
+    return remote.model_copy(update=keep)
+
+
 def sync_to_notion(db: "RecallDB", client: NotionClient) -> int:
     """Push local-first issues that have no Notion page yet.
 
@@ -222,17 +277,14 @@ def sync_to_notion(db: "RecallDB", client: NotionClient) -> int:
     """
     pushed = 0
     for issue in db.unsynced_issues():
-        notion_title = issue.title if issue.si_id in issue.title else f"{issue.si_id} — {issue.title}"
-        solution = (
-            f"Symptoms: {issue.symptoms}\n"
-            f"Root cause: {issue.root_cause}\n"
-            f"Fix: {issue.fix}"
-        )
         try:
-            page_id = client.create_page(
-                build_notion_properties(notion_title, solution, issue.source, issue.tags)
+            page_id, edited_at = client.create_page(
+                build_notion_properties(
+                    _notion_title(issue), _notion_solution(issue), issue.source, issue.tags
+                )
             )
-            db.link_notion_page(issue.si_id, page_id)
+            # Stamping the edit time stops the next pull from re-reading this page.
+            db.link_notion_page(issue.si_id, page_id, edited_at)
             pushed += 1
         except Exception as exc:
             log.warning("notion sync: push failed for %s, will retry: %s", issue.si_id, exc)
@@ -262,6 +314,10 @@ def sync_from_notion(db: "RecallDB", engine: "EmbeddingEngine", client: NotionCl
         if issue is None:
             log.warning("notion sync: skipping page %s (no title)", page_id)
             continue
+        local = db.get_issue_by_notion_page(page_id)
+        if local is not None:
+            issue.si_id = derive_si_id(page_id, issue.title, local.si_id)
+            issue = _merge_with_local(issue, local)
         issue.embedding = engine.embed(f"{issue.title} {issue.symptoms} {issue.root_cause}")
         db.insert_issue(issue)
         changed += 1

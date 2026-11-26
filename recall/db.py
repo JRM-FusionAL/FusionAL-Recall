@@ -189,6 +189,13 @@ class RecallDB:
         ).fetchall()
         return {r["notion_page_id"]: r["notion_edited_at"] or "" for r in rows}
 
+    def get_issue_by_notion_page(self, page_id: str) -> Optional[Issue]:
+        """Return the local row linked to a Notion page, if any."""
+        row = self._conn.execute(
+            "SELECT * FROM issues WHERE notion_page_id = ?", (page_id,)
+        ).fetchone()
+        return self._row_to_issue(row) if row else None
+
     def unsynced_issues(self) -> List[Issue]:
         """Return new local-first issues explicitly awaiting Notion sync."""
         rows = self._conn.execute(
